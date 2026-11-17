@@ -13,7 +13,7 @@ jobs:
 
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: "3.14"
 
       - name: Install test dependencies
         run: python -m pip install "httpx==0.28.1" "fastapi>=0.110,<1"
@@ -22,24 +22,49 @@ jobs:
         run: python -m unittest discover -s tests -v
 
   hermes-validate:
-    # The manifest gate of the catalog: validate + doctor on the runner.
-    # hermes-agent is installed from the upstream repository (not PyPI) with
-    # Python 3.11, where its dependency set resolves.
+    # The manifest gate of the catalog: validate + doctor against a real Hermes
+    # checkout. Hermes is not on PyPI and its setup.py refuses non-Nix wheel
+    # builds, so the runner clones the upstream repo, installs its pinned deps
+    # (they require Python 3.14) and runs the CLI straight from the checkout
+    # with a throwaway HERMES_HOME.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.14"
 
-      - name: Install Hermes Agent (from source)
+      - name: Checkout Hermes Agent
+        uses: actions/checkout@v4
+        with:
+          repository: NousResearch/hermes-agent
+          path: hermes-agent
+          ref: main
+
+      - name: Install Hermes dependencies
+        working-directory: hermes-agent
         run: |
           python -m pip install --upgrade pip
-          python -m pip install "git+https://github.com/NousResearch/hermes-agent.git@main"
+          python -m pip install -r <(python - <<'PY'
+          import re
+          text = open("pyproject.toml", encoding="utf-8").read()
+          block = text.split("dependencies = [", 1)[1].split("]", 1)[0]
+          for line in block.splitlines():
+              line = line.strip()
+              if line.startswith('"') and line.endswith('",'):
+                  print(line[1:-2])
+          PY
+          )
 
       - name: Validate the plugin manifest
-        run: hermes plugins validate . --install-deps
+        env:
+          HERMES_HOME: ${{ runner.temp }}/hermes-home
+        run: |
+          PYTHONPATH=hermes-agent python hermes-agent/hermes_cli/main.py plugins validate . --install-deps
 
       - name: Doctor (runtime registration)
-        run: hermes plugins doctor . --ci
+        env:
+          HERMES_HOME: ${{ runner.temp }}/hermes-home
+        run: |
+          PYTHONPATH=hermes-agent python hermes-agent/hermes_cli/main.py plugins doctor . --ci
