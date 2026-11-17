@@ -46,15 +46,10 @@ jobs:
         working-directory: hermes-agent
         run: |
           python - <<'PY'
-          import re
+          import tomllib
 
-          text = open("pyproject.toml", encoding="utf-8").read()
-          block = text.split("dependencies = [", 1)[1].split("]", 1)[0]
-          pins = []
-          for line in block.splitlines():
-              line = line.strip()
-              if line.startswith('"') and line.endswith('",'):
-                  pins.append(line[1:-2])
+          data = tomllib.load(open("pyproject.toml", "rb"))
+          pins = data["project"]["dependencies"]
           open("../hermes-requirements.txt", "w", encoding="utf-8").write(
               "\n".join(pins) + "\n"
           )
