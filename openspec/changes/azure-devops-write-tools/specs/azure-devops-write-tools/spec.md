@@ -86,8 +86,10 @@ work item atualizado.
 
 ### Requirement: O agent edita páginas de wiki
 O plugin SHALL expor `azure_devops_create_wiki_page` (wiki, caminho, conteúdo)
-e `azure_devops_update_wiki_page` (wiki, caminho, conteúdo), devolvendo o
-caminho e a versão da página resultante.
+e `azure_devops_update_wiki_page` (wiki, caminho, conteúdo, ETag atual da
+página), devolvendo o caminho e a versão da página resultante. O ETag vem do
+`azure_devops_get_wiki_page` — a API recusa o update sem o estado atual da
+página no `If-Match`.
 
 #### Scenario: Página criada
 - **WHEN** o modelo cria a página `/Runbooks/Deploy`
