@@ -182,8 +182,13 @@ def _overview_payload(client: Any) -> dict[str, Any]:
             "SELECT [System.Id] FROM WorkItems WHERE [System.AssignedTo] = @me "
             "ORDER BY [System.ChangedDate] DESC"
         )
-        response = client.post("/_apis/wit/wiql", json={"query": wiql}, params={"$top": 20})
-        ids = [item.get("id") for item in (decode_json(response).get("workItems") or [])][:20]
+        ids: list[Any] = []
+        for pid in project_ids:
+            response = client.post(
+                f"/{org}/{pid}/_apis/wit/wiql", json={"query": wiql}, params={"$top": 20}
+            )
+            ids.extend(item.get("id") for item in decode_json(response).get("workItems", []))
+        ids = ids[:20]
         if ids:
             response = client.get(
                 "/_apis/wit/workitems", params={"ids": ",".join(str(i) for i in ids)}
@@ -198,7 +203,14 @@ def _overview_payload(client: Any) -> dict[str, Any]:
                 for item in decode_json(response).get("value", [])
             ]
 
-        response = client.get(f"/{org}/_apis/build/builds", params={"$top": 50})
+        build_rows = []
+        for pid in project_ids:
+            response = client.get(f"/{org}/{pid}/_apis/build/builds", params={"$top": 10})
+            for item in decode_json(response).get("value", []):
+                if ((item.get("requestedFor") or {}).get("id") == user_id):
+                    item = dict(item)
+                    item["_project"] = pid
+                    build_rows.append(item)
         builds = [
             {
                 "id": item.get("id"),
@@ -206,9 +218,9 @@ def _overview_payload(client: Any) -> dict[str, Any]:
                 "status": item.get("status"),
                 "result": item.get("result"),
                 "definition": (item.get("definition") or {}).get("name"),
+                "project": item.get("_project"),
             }
-            for item in decode_json(response).get("value", [])
-            if ((item.get("requestedFor") or {}).get("id") == user_id)
+            for item in build_rows
         ][:10]
 
     payload: dict[str, Any] = {
