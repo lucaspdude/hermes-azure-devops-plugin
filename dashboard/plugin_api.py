@@ -88,6 +88,18 @@ class _ProfileSettingsContext:
         return settings.get(key, default)
 
 
+def _panel_error(exc: Exception) -> HTTPException:
+    """One error shape for every failure: the plugin taxonomy, status kept."""
+    if isinstance(exc, AdoError):
+        detail: dict[str, Any] = {"code": exc.code, "message": exc.message}
+        if exc.status is not None:
+            detail["status"] = exc.status
+        return HTTPException(status_code=exc.status or 502, detail=detail)
+    return HTTPException(
+        status_code=500,
+        detail={"code": "upstream_error", "message": "The panel failed unexpectedly."},
+    )
+
 def _panel_client() -> Any:
     """A client for one panel call: profile settings, secret scope, no global state.
 
@@ -133,33 +145,38 @@ def _overview_payload(client: Any) -> dict[str, Any]:
     builds: list[dict[str, Any]] = []
 
     if user_id:
+        # A API do Azure DevOps nao tem PR a nivel de organizacao: PR vive em
+        # /{project}/_apis/git/pullrequests. O painel varre os projetos da
+        # organizacao (a mesma rota que list_projects usa) e filtra os meus.
         org = client.config.organization
-        response = client.get(
-            f"/{org}/_apis/git/pullrequests",
-            params={"searchCriteria.status": "active", "$top": 20},
-        )
-        payload = decode_json(response)
-        mine = [
-            item
-            for item in payload.get("value", [])
-            if user_id
-            in {
-                str((item.get("createdBy") or {}).get("id") or ""),
-                *[
-                    str((reviewer or {}).get("id") or "")
-                    for reviewer in item.get("reviewers") or []
-                ],
-            }
-        ]
+        projects_payload = decode_json(client.get(f"/{org}/_apis/projects", params={"$top": 200}))
+        project_ids = [p.get("id") for p in projects_payload.get("value", [])]
+        mine = []
+        for pid in project_ids:
+            response = client.get(
+                f"/{org}/{pid}/_apis/git/pullrequests",
+                params={"searchCriteria.status": "active", "$top": 10},
+            )
+            for item in decode_json(response).get("value", []):
+                ids = {
+                    str((item.get("createdBy") or {}).get("id") or ""),
+                    *[
+                        str((reviewer or {}).get("id") or "")
+                        for reviewer in item.get("reviewers") or []
+                    ],
+                }
+                if user_id in ids:
+                    mine.append((pid, item))
         pull_requests = [
             {
                 "id": item.get("pullRequestId"),
                 "title": item.get("title"),
+                "project": pid,
                 "repository": (item.get("repository") or {}).get("name"),
                 "isDraft": item.get("isDraft"),
             }
-            for item in mine
-        ]
+            for pid, item in mine
+        ][:20]
 
         wiql = (
             "SELECT [System.Id] FROM WorkItems WHERE [System.AssignedTo] = @me "
