@@ -30,10 +30,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # The Hermes checkout lives OUTSIDE the plugin directory: the validate
+      # security scan walks the plugin tree, and a nested Hermes checkout would
+      # put its own YAML corpus under the scan.
       - uses: actions/checkout@v4
         with:
           repository: NousResearch/hermes-agent
-          path: hermes-agent
+          path: ${{ runner.temp }}/hermes-agent
           ref: main
 
       - uses: actions/setup-python@v5
@@ -44,20 +47,20 @@ jobs:
         uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
-          working-directory: hermes-agent
+          working-directory: ${{ runner.temp }}/hermes-agent
 
       - name: Install Hermes dependencies (resolved by the committed uv.lock)
-        working-directory: hermes-agent
+        working-directory: ${{ runner.temp }}/hermes-agent
         run: uv sync --frozen --no-dev
 
       - name: Validate the plugin manifest
         env:
           HERMES_HOME: ${{ runner.temp }}/hermes-home
         run: |
-          hermes-agent/.venv/bin/python hermes-agent/hermes_cli/main.py plugins validate . --install-deps
+          "${{ runner.temp }}/hermes-agent/.venv/bin/python" "${{ runner.temp }}/hermes-agent/hermes_cli/main.py" plugins validate . --install-deps
 
       - name: Doctor (runtime registration)
         env:
           HERMES_HOME: ${{ runner.temp }}/hermes-home
         run: |
-          hermes-agent/.venv/bin/python hermes-agent/hermes_cli/main.py plugins doctor . --ci
+          "${{ runner.temp }}/hermes-agent/.venv/bin/python" "${{ runner.temp }}/hermes-agent/hermes_cli/main.py" plugins doctor . --ci
