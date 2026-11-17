@@ -7,9 +7,11 @@ without fastapi the module is skipped, the way the plugin itself degrades.
 import sys
 import time
 import unittest
+
+import httpx
 from pathlib import Path
 
-from support import plugin_module
+from support import fake_client, plugin_module
 
 try:
     import fastapi  # noqa: F401
@@ -155,3 +157,50 @@ class ReadOnlyTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+@unittest.skipUnless(fastapi, "fastapi is not available")
+class DetailRoutesTest(unittest.TestCase):
+    def test_the_pull_request_detail_route_answers_the_same_payload_as_the_tool(self):
+        backend = _load_backend()
+
+        def handler(request):
+            return httpx.Response(
+                200,
+                json={"pullRequestId": 7, "title": "t", "status": "active"},
+                request=httpx.Request("GET", "https://x"),
+            )
+
+        backend["_panel_client"] = lambda: fake_client(handler)
+        from fastapi import FastAPI
+        from fastapi.testclient import TestClient
+
+        app = FastAPI()
+        app.include_router(backend["router"])
+        client = TestClient(app)
+        response = client.get("/pull-requests/7")
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["pullRequest"]["pullRequestId"], 7)
+
+    def test_the_build_detail_route_answers_the_same_payload_as_the_tool(self):
+        backend = _load_backend()
+
+        def handler(request):
+            return httpx.Response(
+                200,
+                json={"id": 12, "buildNumber": "b-1", "status": "completed"},
+                request=httpx.Request("GET", "https://x"),
+            )
+
+        backend["_panel_client"] = lambda: fake_client(handler)
+        from fastapi import FastAPI
+        from fastapi.testclient import TestClient
+
+        app = FastAPI()
+        app.include_router(backend["router"])
+        client = TestClient(app)
+        response = client.get("/builds/12")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["build"]["buildNumber"], "b-1")
+

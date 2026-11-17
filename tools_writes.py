@@ -128,35 +128,53 @@ def _write_wiki_page(args: dict, kwargs: dict, *, create: bool) -> dict[str, Any
             CODE_INVALID_INPUT,
             "The parameters path and content are required.",
         )
+    etag = text_arg(arguments, "etag")
     version = int_arg(arguments, "version", minimum=0)
-    headers: dict[str, str] = {"Content-Type": "text/plain; charset=utf-8"}
+    # A API do wiki PUT espera application/json com {"content": ...} (verificado contra
+    # a API real: text/plain e recusado com invalid_content_type).
+    headers: dict[str, str] = {}
+    body: dict[str, Any] = {"content": content}
     if create:
         response = adoc.put(
             _pages_path(adoc, wiki),
             params={"path": page_path},
-            content=content,
+            json=body,
             headers=headers,
         )
     else:
-        if version is None:
+        if not etag and version is None:
             raise AdoError(
                 CODE_INVALID_INPUT,
-                "The parameter version is required to update a wiki page (the version of "
-                "the page being replaced).",
+                "Pass etag (from azure_devops_get_wiki_page) or version to update a "
+                "wiki page - the API refuses an update without the page's current state.",
             )
-        headers["If-Match"] = str(version)
+        if etag:
+            headers["If-Match"] = etag
+        elif version is not None:
+            headers["If-Match"] = str(version)
         response = adoc.put(
             _pages_path(adoc, wiki),
             params={"path": page_path},
-            content=content,
+            json=body,
             headers=headers,
         )
-    page = response.json()
+    # The PUT answer of a create does not carry the version: read the page back
+    # (with includeContent) so the model gets the real version for a later update.
+    try:
+        page = decode_json(
+            adoc.get(
+                _pages_path(adoc, wiki),
+                params={"path": page_path, "includeContent": True},
+            )
+        )
+    except Exception:
+        page = response.json()
     _notify_changed()
     return {
         "path": page.get("path") or page_path,
         "version": page.get("version"),
-            "url": ((page.get("_links") or {}).get("page") or {}).get("href"),
+        "content": page.get("content"),
+        "url": ((page.get("_links") or {}).get("page") or {}).get("href"),
     }
 
 
@@ -218,11 +236,15 @@ def _wiki_parameters(with_version: bool = False) -> dict[str, Any]:
         "required": ["wiki", "path", "content"],
     }
     if with_version:
+        parameters["properties"]["etag"] = {
+            "type": "string",
+            "description": "Current ETag of the page, from azure_devops_get_wiki_page.",
+        }
         parameters["properties"]["version"] = {
             "type": "integer",
             "description": "Current version of the page (required to update).",
         }
-        parameters["required"] = ["wiki", "path", "content", "version"]
+        parameters["required"] = ["wiki", "path", "content", "etag"]
     return parameters
 
 

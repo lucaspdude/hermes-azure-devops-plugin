@@ -54,10 +54,17 @@ def handle_get_wiki_page(args: dict, **kwargs) -> dict[str, Any]:
     arguments = args_of(args)
     wiki = _wiki_arg(adoc, arguments)
     page_path = text_arg(arguments, "path") or DEFAULT_PAGE_PATH
-    response = adoc.get(_pages_path(adoc, wiki), params={"path": page_path})
+    # includeContent traz o corpo e a versao da pagina (o GET sem ele devolve o
+    # esqueleto sem content e sem version - e a version e o que o update exige no If-Match).
+    response = adoc.get(
+        _pages_path(adoc, wiki), params={"path": page_path, "includeContent": True}
+    )
     payload = decode_json(response)
     return {
         "page": _page(payload),
+        # The update route addresses the page by this ETag in If-Match; the model
+        # passes it back to azure_devops_update_wiki_page.
+        "etag": response.headers.get("ETag"),
         "wiki": _wiki(wiki, adoc.config.organization),
     }
 
