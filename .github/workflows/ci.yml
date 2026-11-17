@@ -16,20 +16,27 @@ jobs:
           python-version: "3.12"
 
       - name: Install test dependencies
-        run: python -m pip install httpx==0.28.1
+        run: python -m pip install "httpx==0.28.1" "fastapi>=0.110,<1"
 
       - name: Run the suite (offline)
         run: python -m unittest discover -s tests -v
 
   hermes-validate:
+    # The manifest gate of the catalog: validate + doctor on the runner.
+    # hermes-agent is installed from the upstream repository (not PyPI) with
+    # Python 3.11, where its dependency set resolves.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Hermes Agent
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Hermes Agent (from source)
         run: |
-          python -m pip install "hermes-agent>=0.23,<0.24" || \
-          python -m pip install git+https://github.com/NousResearch/hermes-agent.git
+          python -m pip install --upgrade pip
+          python -m pip install "git+https://github.com/NousResearch/hermes-agent.git@main"
 
       - name: Validate the plugin manifest
         run: hermes plugins validate . --install-deps

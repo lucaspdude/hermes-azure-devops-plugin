@@ -65,19 +65,15 @@ def _register_help(ctx) -> None:
     def _cli_setup(parser):
         sub = parser.add_parser("help", help="Azure DevOps plugin help")
         sub.add_argument("topic", nargs="?", default="", help="Highlight one section")
-        sub.set_defaults(_topic="")
+        sub.set_defaults(topic="")
 
     def _cli_handler(args):
         return render_help(getattr(args, "topic", ""))
 
-    try:
-        ctx.register_cli_command(
-            "azure-devops",
-            setup_fn=_cli_setup,
-            handler_fn=_cli_handler,
-            description="Azure DevOps plugin help",
-        )
-    except Exception:
-        # The CLI subcommand registration needs a parser the host provides; when it
-        # is unavailable the slash command still answers the same content.
-        pass
+    ctx.register_cli_command(
+        "azure-devops",
+        help="Azure DevOps plugin help (projects, builds, pull requests, work items)",
+        setup_fn=_cli_setup,
+        handler_fn=_cli_handler,
+        description="Azure DevOps plugin help",
+    )

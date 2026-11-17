@@ -16,6 +16,7 @@ description: The usage contract of the Azure DevOps plugin - PAT scopes per fami
 | Release (definitions, releases) | `vso.release` | `vso.release_execute` |
 | Wiki (wikis, pages, edits) | `vso.wiki` | `vso.wiki_write` |
 | Identity (authenticated user, votes) | `vso.identity` | `vso.identity_manage` |
+| Policies (policy configurations of a project) | `vso.code` (read via the project) | — |
 
 A missing scope answers `forbidden` (403) with the message of the API. The
 PAT must be **organization-scoped**; a global PAT stops working on

@@ -1,75 +1,110 @@
 """The read-only backend of the Azure DevOps desktop panel.
 
-The routes reuse the same client and credential the agent tools use (one PAT,
-one settings source, one error taxonomy). The canonical state is the Azure
-DevOps API itself: the panel caches for ~15s to absorb polling, and the tools'
-write events only invalidate this cache.
+The routes reuse the same client class, credential route and error taxonomy as
+the agent tools (one PAT, one error shape), but they read the settings straight
+from the active profile's config - the backend is loaded by the gateway as a
+standalone file, and it must not touch the toolkit's shared context the agent
+tools bind at registration.
+
+The canonical state is the Azure DevOps API itself: the panel keeps a module
+level cache for ~15s to absorb polling, invalidated by the tools' write event.
 
 Mounted at ``/api/plugins/azure-devops/`` by the gateway when the plugin is in
-``plugins.enabled``. Read-only by construction: only GET routes exist, and a
-mutating verb answers 405 before anything else runs.
+``plugins.enabled``. Read-only by construction: only GET routes exist.
 """
 
+import sys
+import threading
+import time
+from pathlib import Path
 from typing import Any, Callable
 
 from fastapi import APIRouter, HTTPException, Request
 
-# The backend is loaded by the gateway as a standalone file (import_user_code),
-# outside the plugin package: resolve the plugin modules through whichever
-# namespace the loader registered (the slug differs between install modes).
-from hermes_plugin_modules import AdoError, bind_context  # noqa: F401
+_PLUGIN_ROOT = str(Path(__file__).resolve().parent.parent)
+if _PLUGIN_ROOT not in sys.path:
+    sys.path.insert(0, _PLUGIN_ROOT)
+
+from hermes_plugin_modules import AdoError, decode_json  # noqa: E402
 
 router = APIRouter()
 
+#: The plugin id in ``plugins.entries.<id>.settings`` (the manifest name).
+PLUGIN_ID = "azure-devops"
 
-class _PanelContext:
-    """The settings surface the gateway hands to a plugin backend."""
+#: The module-level cache: one instance per process, invalidated by events.
+_CACHE_LOCK = threading.Lock()
+_CACHE: dict[tuple, tuple[float, Any]] = {}
+CACHE_SECONDS = 15.0
 
-    def __init__(self, settings: dict[str, Any] | None = None) -> None:
-        self._settings = dict(settings or {})
+
+def _cache_get(key: tuple) -> Any | None:
+    with _CACHE_LOCK:
+        hit = _CACHE.get(key)
+        if hit is None:
+            return None
+        at, value = hit
+        if time.monotonic() - at > CACHE_SECONDS:
+            return None
+        return value
+
+
+def _cache_put(key: tuple, value: Any) -> None:
+    with _CACHE_LOCK:
+        _CACHE[key] = (time.monotonic(), value)
+
+
+def cache_invalidate() -> None:
+    """The write tools' event lands here: the next read refetches."""
+    with _CACHE_LOCK:
+        _CACHE.clear()
+
+
+def _plugin_settings() -> dict[str, Any]:
+    """The settings of the plugin, from the active profile's config."""
+    try:
+        from hermes_cli.config import load_config
+
+        config = load_config()
+        entries = (config.get("plugins") or {}).get("entries") or {}
+        return (entries.get(PLUGIN_ID) or {}).get("settings") or {}
+    except Exception:
+        return {}
+
+
+def _panel_client() -> Any:
+    """A client for one panel call: profile settings, secret scope, no global state."""
+    # The toolkit's build_client reads the toolkit context bound by the agent
+    # registration. When that binding exists (plugin enabled and loaded), reuse
+    # it: the panel then sees exactly what the tools see.
+    from toolkit import build_client as agent_client
+
+    try:
+        return agent_client()
+    except AdoError:
+        # No binding (backend mounted before the agent load): build from the
+        # profile config directly.
+        settings = _plugin_settings()
+        cfg_module = importlib.import_module("config")
+        cfg = cfg_module.load_config(_FakeContext(settings))
+        from auth import resolve_pat
+
+        pat = resolve_pat()
+        client_module = importlib.import_module("client")
+        return client_module.AdoClient(cfg, pat)
+
+
+class _FakeContext:
+    """The settings surface for the fallback client (never rebinds the toolkit)."""
+
+    def __init__(self, settings: dict[str, Any]) -> None:
+        self._settings = dict(settings)
 
     def get_config(self, key: str, default: Any = None) -> Any:
         return self._settings.get(key, default)
 
 
-def _bind(request: Request) -> None:
-    settings = getattr(getattr(request, "state", None), "plugin_settings", None)
-    bind_context(_PanelContext(settings))
-
-
-def _panel_error(exc: Exception) -> HTTPException:
-    """One error shape for every failure: the plugin taxonomy, status kept."""
-    if isinstance(exc, AdoError):
-        detail: dict[str, Any] = {"code": exc.code, "message": exc.message}
-        if exc.status is not None:
-            detail["status"] = exc.status
-        return HTTPException(status_code=exc.status or 502, detail=detail)
-    return HTTPException(
-        status_code=500,
-        detail={"code": "upstream_error", "message": "The panel failed unexpectedly."},
-    )
-
-
-def _cache(seconds: int = 15):
-    """A per-call in-memory cache, so polling does not hammer the API."""
-    store: dict[tuple, tuple[float, Any]] = {}
-
-    def decorator(fn: Callable[..., Any]) -> Callable[..., Any]:
-        import time
-
-        def wrapped(*args: Any, **kwargs: Any) -> Any:
-            key = (args, tuple(sorted(kwargs.items())))
-            now = time.monotonic()
-            hit = store.get(key)
-            if hit is not None and now - hit[0] < seconds:
-                return hit[1]
-            value = fn(*args, **kwargs)
-            store[key] = (now, value)
-            return value
-
-        return wrapped
-
-    return decorator
+import importlib  # noqa: E402
 
 
 def _overview_payload(client: Any) -> dict[str, Any]:
@@ -78,7 +113,6 @@ def _overview_payload(client: Any) -> dict[str, Any]:
     The identity comes from ``connectionData``; a PAT without the Identity
     scope degrades: the parts that do not need the identity are still listed.
     """
-    from hermes_plugin_modules import decode_json
     from hermes_plugin_modules import authenticated_user_id
 
     identity_warning = None
@@ -165,9 +199,7 @@ def _overview_payload(client: Any) -> dict[str, Any]:
 
 
 def _build_overview() -> dict[str, Any]:
-    from hermes_plugin_modules import build_client
-
-    client = build_client()
+    client = _panel_client()
     try:
         return _overview_payload(client)
     finally:
@@ -176,12 +208,21 @@ def _build_overview() -> dict[str, Any]:
             close()
 
 
+def _served(key: tuple, build: Callable[[], Any]) -> Any:
+    """Cache-or-build, against the module-level store (polling absorbs here)."""
+    hit = _cache_get(key)
+    if hit is not None:
+        return hit
+    value = build()
+    _cache_put(key, value)
+    return value
+
+
 @router.get("/overview")
 def overview(request: Request) -> dict[str, Any]:
     """The activity of the authenticated user (the panel's only aggregate)."""
-    _bind(request)
     try:
-        return _cache(seconds=15)(_build_overview)()
+        return _served(("overview",), _build_overview)
     except AdoError as exc:
         raise _panel_error(exc) from exc
 
@@ -189,19 +230,18 @@ def overview(request: Request) -> dict[str, Any]:
 @router.get("/pull-requests/{pull_request_id}")
 def pull_request_detail(pull_request_id: int, request: Request) -> dict[str, Any]:
     """One pull request, the same payload the agent tool answers."""
-    _bind(request)
     try:
-        from hermes_plugin_modules import decode_json
-        from hermes_plugin_modules import build_client
+        def build() -> dict[str, Any]:
+            client = _panel_client()
+            try:
+                response = client.get(f"/_apis/git/pullrequests/{pull_request_id}")
+                return {"pullRequest": decode_json(response)}
+            finally:
+                close = getattr(client, "close", None)
+                if close:
+                    close()
 
-        client = build_client()
-        try:
-            response = client.get(f"/_apis/git/pullrequests/{pull_request_id}")
-            return {"pullRequest": decode_json(response)}
-        finally:
-            close = getattr(client, "close", None)
-            if close:
-                close()
+        return _served(("pull-requests", pull_request_id), build)
     except AdoError as exc:
         raise _panel_error(exc) from exc
 
@@ -209,18 +249,17 @@ def pull_request_detail(pull_request_id: int, request: Request) -> dict[str, Any
 @router.get("/builds/{build_id}")
 def build_detail(build_id: int, request: Request) -> dict[str, Any]:
     """One build, the same payload the agent tool answers."""
-    _bind(request)
     try:
-        from hermes_plugin_modules import decode_json
-        from hermes_plugin_modules import build_client
+        def build() -> dict[str, Any]:
+            client = _panel_client()
+            try:
+                response = client.get(f"/_apis/build/builds/{build_id}")
+                return {"build": decode_json(response)}
+            finally:
+                close = getattr(client, "close", None)
+                if close:
+                    close()
 
-        client = build_client()
-        try:
-            response = client.get(f"/_apis/build/builds/{build_id}")
-            return {"build": decode_json(response)}
-        finally:
-            close = getattr(client, "close", None)
-            if close:
-                close()
+        return _served(("builds", build_id), build)
     except AdoError as exc:
         raise _panel_error(exc) from exc

@@ -13,6 +13,9 @@ class HelpTest(unittest.TestCase):
         self.assertIn("Usage contract", guide)
         self.assertIn("Workflows", guide)
 
+    def test_the_guide_carries_the_policies_family(self):
+        self.assertIn("Policies", help_module.render_help())
+
     def test_the_guide_carries_the_scopes_of_every_family(self):
         guide = help_module.render_help()
         for scope in (

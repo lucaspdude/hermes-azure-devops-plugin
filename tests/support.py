@@ -69,9 +69,13 @@ class FakeContext:
         )
         return {"name": name}
 
-    def register_cli_command(self, name, setup_fn=None, handler_fn=None, description=""):
+    def register_cli_command(self, name, help="", setup_fn=None, handler_fn=None, description=""):
+        # The host signature has a required positional ``help``; the fake keeps it
+        # required so a registration without it fails here, not only on the host.
+        if not help:
+            raise TypeError("register_cli_command() missing required argument: 'help'")
         self.registered_commands.append(
-            {"name": name, "cli": True, "handler": handler_fn}
+            {"name": name, "cli": True, "help": help, "handler": handler_fn}
         )
         return {"name": name}
 

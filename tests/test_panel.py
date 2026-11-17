@@ -130,14 +130,15 @@ class CacheTest(unittest.TestCase):
         backend = _load_backend()
         calls = {"n": 0}
 
-        @backend["_cache"](seconds=15)
         def build():
             calls["n"] += 1
             return {"n": calls["n"]}
 
-        self.assertEqual(build(), {"n": 1})
-        self.assertEqual(build(), {"n": 1})
+        self.assertEqual(backend["_served"](("k",), build), {"n": 1})
+        self.assertEqual(backend["_served"](("k",), build), {"n": 1})
         self.assertEqual(calls["n"], 1)
+        backend["cache_invalidate"]()
+        self.assertEqual(backend["_served"](("k",), build), {"n": 2})
 
 
 @unittest.skipUnless(fastapi, "fastapi is not available")
