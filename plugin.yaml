@@ -1,0 +1,48 @@
+manifest_version: 2
+name: azure-devops
+version: 0.1.0
+description: >-
+  Azure DevOps for the Hermes agent: projects, repositories, builds, pull
+  requests, work items, wikis and releases, driven by a personal access token.
+requires_hermes: ">=0.23"
+requires_env:
+  - name: AZURE_DEVOPS_PAT_TOKEN
+    description: >-
+      Azure DevOps personal access token (PAT) used to authenticate every call
+      to the Azure DevOps REST API. Grant it the scopes the operations need
+      (Code, Build & Release, Work items, Wiki) and paste it when the plugin is
+      installed.
+    url: https://learn.microsoft.com/en-us/azure/devops/integrate/get-started/authentication/personal-access-token
+    secret: true
+provides_tools: []
+config_schema:
+  organization:
+    type: str
+    required: true
+    description: >-
+      Azure DevOps organization name (the first path segment of
+      https://dev.azure.com/<organization>). Required: the plugin is generic
+      and never guesses an organization.
+  base_url:
+    type: str
+    default: https://dev.azure.com
+    description: >-
+      Base URL of the Azure DevOps REST API. Change it for a sovereign cloud
+      or an on-premises Azure DevOps Server.
+  api_version:
+    type: str
+    default: "7.1"
+    description: >-
+      Default REST API version. Endpoints that only answer on a preview
+      version override it in the client.
+  default_project:
+    type: str
+    default: ""
+    description: >-
+      Project used when a tool is called without one. Empty means the caller
+      has to name the project.
+  http_timeout_ms:
+    type: int
+    default: 30000
+    description: >-
+      Timeout of each Azure DevOps request, in milliseconds.

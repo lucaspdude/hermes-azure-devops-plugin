@@ -89,7 +89,7 @@ caminho infeliz; nenhuma exceção SHALL escapar do handler.
   em vez de propagar a exceção
 
 #### Scenario: Payloads de sucesso são previsíveis
-- **WHEN** a tool `azure_devops_list_projects` tem sucesso
+- **WHEN** uma tool de listagem do plugin tem sucesso
 - **THEN** a resposta é `{"ok": true, "data": {...}}` decodificável como JSON
 
 ### Requirement: Falhas da API são traduzidas em códigos acionáveis
