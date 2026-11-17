@@ -25,7 +25,7 @@ _PLUGIN_ROOT = str(Path(__file__).resolve().parent.parent)
 if _PLUGIN_ROOT not in sys.path:
     sys.path.insert(0, _PLUGIN_ROOT)
 
-from hermes_plugin_modules import AdoError, decode_json  # noqa: E402
+from hermes_plugin_modules import AdoError, bind_context, decode_json  # noqa: E402
 
 router = APIRouter()
 
