@@ -36,7 +36,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: NousResearch/hermes-agent
-          path: ${{ runner.temp }}/hermes-agent
+          path: _hermes
           ref: main
 
       - uses: actions/setup-python@v5
@@ -47,20 +47,24 @@ jobs:
         uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
-          working-directory: ${{ runner.temp }}/hermes-agent
+          working-directory: _hermes
 
       - name: Install Hermes dependencies (resolved by the committed uv.lock)
-        working-directory: ${{ runner.temp }}/hermes-agent
+        working-directory: _hermes
         run: uv sync --frozen --no-dev
 
       - name: Validate the plugin manifest
         env:
           HERMES_HOME: ${{ runner.temp }}/hermes-home
         run: |
-          "${{ runner.temp }}/hermes-agent/.venv/bin/python" "${{ runner.temp }}/hermes-agent/hermes_cli/main.py" plugins validate . --install-deps
+          mkdir -p ../plugin-tree
+          cp -R $(git ls-files | tr '\n' ' ') ../plugin-tree/
+          cd ../plugin-tree
+          "$GITHUB_WORKSPACE/_hermes/.venv/bin/python" "$GITHUB_WORKSPACE/_hermes/hermes_cli/main.py" plugins validate . --install-deps
 
       - name: Doctor (runtime registration)
         env:
           HERMES_HOME: ${{ runner.temp }}/hermes-home
         run: |
-          "${{ runner.temp }}/hermes-agent/.venv/bin/python" "${{ runner.temp }}/hermes-agent/hermes_cli/main.py" plugins doctor . --ci
+          cd ../plugin-tree
+          "$GITHUB_WORKSPACE/_hermes/.venv/bin/python" "$GITHUB_WORKSPACE/_hermes/hermes_cli/main.py" plugins doctor . --ci
