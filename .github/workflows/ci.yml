@@ -42,20 +42,27 @@ jobs:
           path: hermes-agent
           ref: main
 
-      - name: Install Hermes dependencies
+      - name: Extract Hermes pinned dependencies
         working-directory: hermes-agent
         run: |
-          python -m pip install --upgrade pip
-          python -m pip install -r <(python - <<'PY'
+          python - <<'PY'
           import re
+
           text = open("pyproject.toml", encoding="utf-8").read()
           block = text.split("dependencies = [", 1)[1].split("]", 1)[0]
+          pins = []
           for line in block.splitlines():
               line = line.strip()
               if line.startswith('"') and line.endswith('",'):
-                  print(line[1:-2])
-          PY
+                  pins.append(line[1:-2])
+          open("../hermes-requirements.txt", "w", encoding="utf-8").write(
+              "\n".join(pins) + "\n"
           )
+          print(f"{len(pins)} pins extracted")
+          PY
+
+      - name: Install Hermes dependencies
+        run: python -m pip install -r hermes-requirements.txt
 
       - name: Validate the plugin manifest
         env:
