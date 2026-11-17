@@ -14,7 +14,39 @@ requires_env:
       installed.
     url: https://learn.microsoft.com/en-us/azure/devops/integrate/get-started/authentication/personal-access-token
     secret: true
-provides_tools: []
+provides_tools:
+  - azure_devops_list_projects
+  - azure_devops_get_project
+  - azure_devops_list_repositories
+  - azure_devops_get_repository
+  - azure_devops_list_build_definitions
+  - azure_devops_list_builds
+  - azure_devops_get_build
+  - azure_devops_get_build_changes
+  - azure_devops_get_build_timeline
+  - azure_devops_list_pull_requests
+  - azure_devops_get_pull_request
+  - azure_devops_list_pull_request_comments
+  - azure_devops_list_pull_request_labels
+  - azure_devops_query_wiql
+  - azure_devops_get_work_item
+  - azure_devops_list_work_items
+  - azure_devops_list_wikis
+  - azure_devops_list_wiki_pages
+  - azure_devops_get_wiki_page
+  - azure_devops_list_branches
+  - azure_devops_get_branch
+  - azure_devops_list_commits
+  - azure_devops_get_commit
+  - azure_devops_list_tags
+  - azure_devops_list_build_artifacts
+  - azure_devops_get_my_identity
+  - azure_devops_list_identities
+  - azure_devops_list_policies
+  - azure_devops_list_release_definitions
+  - azure_devops_list_releases
+  - azure_devops_get_release
+
 config_schema:
   organization:
     type: str

@@ -7,6 +7,7 @@ imports them, which is what makes their relative imports work.
 
 import importlib
 import importlib.util
+import json
 import sys
 import types
 from pathlib import Path
@@ -96,6 +97,30 @@ def fake_client(handler, **settings):
     settings.setdefault("organization", "contoso")
     cfg = config.load_config(FakeContext(settings))
     return client.AdoClient(cfg, FAKE_PAT, transport=mock_transport(handler))
+
+
+def bind_context(settings=None):
+    """Bind a fake plugin context, so the tools read the settings of the test.
+
+    The plugin binds the real context when it registers; the suite binds a
+    fake one, with the same ``get_config`` surface.
+    """
+    toolkit = plugin_module("toolkit")
+    ctx = FakeContext(settings)
+    toolkit.bind_context(ctx)
+    return ctx
+
+
+def call_tool(name, args=None, **kwargs):
+    """Call a tool of the registry and return the parsed envelope.
+
+    The call goes through ``guarded_handler``, exactly like the Hermes
+    dispatcher does, so the answer is the JSON string of the contract.
+    """
+    registry = plugin_module("registry")
+    tool = next(tool for tool in registry.TOOLS if tool.name == name)
+    raw = registry.guarded_handler(tool.handler)(args or {}, **kwargs)
+    return json.loads(raw)
 
 
 def manifest_provides_tools(path=None):
