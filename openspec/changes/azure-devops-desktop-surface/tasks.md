@@ -24,6 +24,7 @@
 - [x] 4.3 Tratar o 404 do backend ausente com mensagem acionável e tratar o erro de escopo de identidade com aviso visível na seção afetada — verificar simulando 404 e 403
 - [x] 4.4 Implementar o polling com `ctx.setInterval` (nunca `window.setInterval`) e limpeza do timer no disable — verificar que nenhum timer sobrevive ao disable do plugin
 - [x] 4.5 Modelar o `dashboard/manifest.json` no formato em uso pelo plugin vivo de referencia (`name`, `label`, `description`, `icon`, `version`, `api: plugin_api.py`) e o `plugin_api.py` com `router = APIRouter()` e rotas `@router.get(...)` — verificar que as rotas montam em `/api/plugins/azure-devops/...` no hostgator
+  **Revisao 2 (pos-reviewer)**: os P0s encontrados foram corrigidos no commit `9b3c554` — backend autocontido (o `sys.path` do plugin entra antes do shim; o import standalone exato do gateway foi reproduzido no host e importa o router com as 3 rotas GET), settings lidas do perfil sem rebindar o contexto global das tools, cache em nivel de modulo com `cache_invalidate()` por evento, `desktop/plugin.js` reescrito com hooks React (children corretos, chip com contagem, disposer do `ctx.setInterval`), `ctx.register_cli_command` com o `help=` obrigatorio e CI com `setup-python` + Hermes instalado do git (Python 3.11). Evento de invalidacao congelado por `tests/test_write_events.py` (4 testes).
 
 ## 5. Documentação e gates
 
