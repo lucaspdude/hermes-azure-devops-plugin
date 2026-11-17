@@ -25,7 +25,7 @@ _PLUGIN_ROOT = str(Path(__file__).resolve().parent.parent)
 if _PLUGIN_ROOT not in sys.path:
     sys.path.insert(0, _PLUGIN_ROOT)
 
-from hermes_plugin_modules import AdoError, decode_json  # noqa: E402
+from hermes_plugin_modules import AdoError, bind_context, decode_json  # noqa: E402
 
 router = APIRouter()
 
@@ -72,26 +72,46 @@ def _plugin_settings() -> dict[str, Any]:
         return {}
 
 
+class _ProfileSettingsContext:
+    """A settings context that reads plugins.entries.<id>.settings from the
+    profile config the gateway already loaded - never the toolkit's global."""
+
+    def get_config(self, key: str, default: Any = None) -> Any:
+        try:
+            from hermes_cli.config import load_config
+
+            config = load_config()
+            entries = (config.get("plugins") or {}).get("entries") or {}
+            settings = (entries.get(PLUGIN_ID) or {}).get("settings") or {}
+        except Exception:
+            settings = {}
+        return settings.get(key, default)
+
+
+def _panel_error(exc: Exception) -> HTTPException:
+    """One error shape for every failure: the plugin taxonomy, status kept."""
+    if isinstance(exc, AdoError):
+        detail: dict[str, Any] = {"code": exc.code, "message": exc.message}
+        if exc.status is not None:
+            detail["status"] = exc.status
+        return HTTPException(status_code=exc.status or 502, detail=detail)
+    return HTTPException(
+        status_code=500,
+        detail={"code": "upstream_error", "message": "The panel failed unexpectedly."},
+    )
+
 def _panel_client() -> Any:
-    """A client for one panel call: profile settings, secret scope, no global state."""
-    # The toolkit's build_client reads the toolkit context bound by the agent
-    # registration. When that binding exists (plugin enabled and loaded), reuse
-    # it: the panel then sees exactly what the tools see.
-    from toolkit import build_client as agent_client
+    """A client for one panel call: profile settings, secret scope, no global state.
 
-    try:
-        return agent_client()
-    except AdoError:
-        # No binding (backend mounted before the agent load): build from the
-        # profile config directly.
-        settings = _plugin_settings()
-        cfg_module = importlib.import_module("config")
-        cfg = cfg_module.load_config(_FakeContext(settings))
-        from auth import resolve_pat
+    The backend binds its OWN settings context (a fresh one per call) instead of
+    the toolkit's global: binding the global here would clobber the binding the
+    agent tools registered, and every agent tool call would then read the panel's
+    empty settings.
+    """
+    bind_context(_ProfileSettingsContext())
+    from hermes_plugin_modules import build_client
 
-        pat = resolve_pat()
-        client_module = importlib.import_module("client")
-        return client_module.AdoClient(cfg, pat)
+    return build_client()
 
 
 class _FakeContext:
@@ -103,8 +123,6 @@ class _FakeContext:
     def get_config(self, key: str, default: Any = None) -> Any:
         return self._settings.get(key, default)
 
-
-import importlib  # noqa: E402
 
 
 def _overview_payload(client: Any) -> dict[str, Any]:
@@ -127,40 +145,50 @@ def _overview_payload(client: Any) -> dict[str, Any]:
     builds: list[dict[str, Any]] = []
 
     if user_id:
+        # A API do Azure DevOps nao tem PR a nivel de organizacao: PR vive em
+        # /{project}/_apis/git/pullrequests. O painel varre os projetos da
+        # organizacao (a mesma rota que list_projects usa) e filtra os meus.
         org = client.config.organization
-        response = client.get(
-            f"/{org}/_apis/git/pullrequests",
-            params={"searchCriteria.status": "active", "$top": 20},
-        )
-        payload = decode_json(response)
-        mine = [
-            item
-            for item in payload.get("value", [])
-            if user_id
-            in {
-                str((item.get("createdBy") or {}).get("id") or ""),
-                *[
-                    str((reviewer or {}).get("id") or "")
-                    for reviewer in item.get("reviewers") or []
-                ],
-            }
-        ]
+        projects_payload = decode_json(client.get("/_apis/projects", params={"$top": 200}))
+        project_ids = [p.get("id") for p in projects_payload.get("value", [])]
+        mine = []
+        for pid in project_ids:
+            response = client.get(
+                f"/{pid}/_apis/git/pullrequests",
+                params={"searchCriteria.status": "active", "$top": 10},
+            )
+            for item in decode_json(response).get("value", []):
+                ids = {
+                    str((item.get("createdBy") or {}).get("id") or ""),
+                    *[
+                        str((reviewer or {}).get("id") or "")
+                        for reviewer in item.get("reviewers") or []
+                    ],
+                }
+                if user_id in ids:
+                    mine.append((pid, item))
         pull_requests = [
             {
                 "id": item.get("pullRequestId"),
                 "title": item.get("title"),
+                "project": pid,
                 "repository": (item.get("repository") or {}).get("name"),
                 "isDraft": item.get("isDraft"),
             }
-            for item in mine
-        ]
+            for pid, item in mine
+        ][:20]
 
         wiql = (
             "SELECT [System.Id] FROM WorkItems WHERE [System.AssignedTo] = @me "
             "ORDER BY [System.ChangedDate] DESC"
         )
-        response = client.post("/_apis/wit/wiql", json={"query": wiql}, params={"$top": 20})
-        ids = [item.get("id") for item in (decode_json(response).get("workItems") or [])][:20]
+        ids: list[Any] = []
+        for pid in project_ids:
+            response = client.post(
+                f"/{pid}/_apis/wit/wiql", json={"query": wiql}, params={"$top": 20}
+            )
+            ids.extend(item.get("id") for item in decode_json(response).get("workItems", []))
+        ids = ids[:20]
         if ids:
             response = client.get(
                 "/_apis/wit/workitems", params={"ids": ",".join(str(i) for i in ids)}
@@ -175,7 +203,14 @@ def _overview_payload(client: Any) -> dict[str, Any]:
                 for item in decode_json(response).get("value", [])
             ]
 
-        response = client.get(f"/{org}/_apis/build/builds", params={"$top": 50})
+        build_rows = []
+        for pid in project_ids:
+            response = client.get(f"/{pid}/_apis/build/builds", params={"$top": 10})
+            for item in decode_json(response).get("value", []):
+                if ((item.get("requestedFor") or {}).get("id") == user_id):
+                    item = dict(item)
+                    item["_project"] = pid
+                    build_rows.append(item)
         builds = [
             {
                 "id": item.get("id"),
@@ -183,9 +218,9 @@ def _overview_payload(client: Any) -> dict[str, Any]:
                 "status": item.get("status"),
                 "result": item.get("result"),
                 "definition": (item.get("definition") or {}).get("name"),
+                "project": item.get("_project"),
             }
-            for item in decode_json(response).get("value", [])
-            if ((item.get("requestedFor") or {}).get("id") == user_id)
+            for item in build_rows
         ][:10]
 
     payload: dict[str, Any] = {

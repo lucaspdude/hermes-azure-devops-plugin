@@ -52,6 +52,12 @@ class OverviewPayloadTest(unittest.TestCase):
 
         def handler(request):
             path = request.url.path
+            if path.endswith("/_apis/projects"):
+                return httpx.Response(
+                    200,
+                    json={"value": [{"id": "proj-1", "name": "Projeto Um"}]},
+                    request=request,
+                )
             if path.endswith("/connectionData"):
                 if request.headers.get("authorization", "").endswith("OmZha2UtcGF0LWZvci10ZXN0cy1vbmx5"):
                     return httpx.Response(
