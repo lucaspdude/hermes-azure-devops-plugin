@@ -9,6 +9,15 @@ resolving a definition name.
 
 from typing import Any
 
+def _notify_changed() -> None:
+    """Tell the desktop panel the state changed (fire-and-forget, best-effort)."""
+    try:
+        from hermes_cli.plugin_events import broadcast_plugin_event
+
+        broadcast_plugin_event("azure-devops", "changed", {})
+    except Exception:
+        pass
+
 from .errors import CODE_INVALID_INPUT, AdoError
 from .registry import ToolSpec
 from .toolkit import (
@@ -51,12 +60,13 @@ def handle_update_work_item(args: dict, **kwargs) -> dict[str, Any]:
     updated = response.json()
     fields = updated.get("fields") or {}
     links = (updated.get("_links") or {})
+    _notify_changed()
     return {
         "workItemId": updated.get("id"),
         "rev": updated.get("rev"),
         "title": fields.get("System.Title"),
         "state": fields.get("System.State"),
-        "url": (links.get("html") or links.get("self") or {}).get("href"),
+            "url": (links.get("html") or links.get("self") or {}).get("href"),
     }
 
 
@@ -94,12 +104,13 @@ def handle_queue_build(args: dict, **kwargs) -> dict[str, Any]:
         body["variables"] = {key: {"value": str(value)} for key, value in variables.items()}
     response = adoc.post(f"/{project}/_apis/build/builds", json=body)
     queued = response.json()
+    _notify_changed()
     return {
         "buildId": queued.get("id"),
         "buildNumber": queued.get("buildNumber"),
         "status": queued.get("status"),
         "queuePosition": queued.get("queuePosition"),
-        "url": ((queued.get("_links") or {}).get("web") or {}).get("href"),
+            "url": ((queued.get("_links") or {}).get("web") or {}).get("href"),
     }
 
 
@@ -141,10 +152,11 @@ def _write_wiki_page(args: dict, kwargs: dict, *, create: bool) -> dict[str, Any
             headers=headers,
         )
     page = response.json()
+    _notify_changed()
     return {
         "path": page.get("path") or page_path,
         "version": page.get("version"),
-        "url": ((page.get("_links") or {}).get("page") or {}).get("href"),
+            "url": ((page.get("_links") or {}).get("page") or {}).get("href"),
     }
 
 

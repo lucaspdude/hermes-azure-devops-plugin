@@ -12,6 +12,19 @@ Nothing is retried: a repeated create would open a second pull request.
 
 from typing import Any
 
+def _notify_changed() -> None:
+    """Tell the desktop panel the state changed (fire-and-forget).
+
+    The import is lazy and best-effort: the event only exists in the gateway
+    runtime, and a missed event is harmless (the panel also polls).
+    """
+    try:
+        from hermes_cli.plugin_events import broadcast_plugin_event
+
+        broadcast_plugin_event("azure-devops", "changed", {})
+    except Exception:
+        pass
+
 from .errors import CODE_INVALID_INPUT, CODE_NOT_FOUND, AdoError
 from .registry import ToolSpec
 from .toolkit import (
@@ -65,6 +78,7 @@ def handle_create_pull_request(args: dict, **kwargs) -> dict[str, Any]:
         json=body,
     )
     created = response.json()
+    _notify_changed()
     return {
         "pullRequestId": created.get("pullRequestId"),
         "url": _web_url(created),
@@ -99,10 +113,11 @@ def handle_add_pull_request_comment(args: dict, **kwargs) -> dict[str, Any]:
         )
     created = response.json()
     comments = created.get("comments") or []
+    _notify_changed()
     return {
         "threadId": created.get("id") or thread,
         "commentId": comments[0].get("id") if comments else None,
-        "status": created.get("status"),
+    "status": created.get("status"),
     }
 
 
@@ -122,6 +137,7 @@ def handle_add_pull_request_label(args: dict, **kwargs) -> dict[str, Any]:
         json={"id": label_id or None, "name": label},
     )
     created = response.json()
+    _notify_changed()
     return {"labelId": created.get("id"), "name": created.get("name") or label}
 
 
@@ -152,6 +168,7 @@ def handle_remove_pull_request_label(args: dict, **kwargs) -> dict[str, Any]:
         f"/{project}/_apis/git/repositories/{repository}/pullRequests/{pull_request}"
         f"/labels/{label_id}"
     )
+    _notify_changed()
     return {"labelId": label_id, "name": label, "removed": True}
 
 
@@ -195,11 +212,12 @@ def handle_complete_pull_request(args: dict, **kwargs) -> dict[str, Any]:
         json=body,
     )
     updated = response.json()
+    _notify_changed()
     return {
         "pullRequestId": updated.get("pullRequestId"),
         "status": updated.get("status"),
         "mergeCommitId": (updated.get("lastMergeCommit") or {}).get("commitId"),
-        "url": _web_url(updated),
+    "url": _web_url(updated),
     }
 
 
@@ -218,11 +236,12 @@ def _vote(args: dict, kwargs: dict, kind: str) -> dict[str, Any]:
         json={"vote": VOTES[kind], "id": user_id},
     )
     reviewer = response.json()
+    _notify_changed()
     return {
         "pullRequestId": pull_request,
         "reviewerId": reviewer.get("id"),
         "vote": reviewer.get("vote"),
-        "displayName": (reviewer.get("displayName") or ""),
+    "displayName": (reviewer.get("displayName") or ""),
     }
 
 
@@ -237,6 +256,7 @@ def _set_status(args: dict, kwargs: dict, status: str) -> dict[str, Any]:
         json={"status": status},
     )
     updated = response.json()
+    _notify_changed()
     return {
         "pullRequestId": updated.get("pullRequestId"),
         "status": updated.get("status"),
