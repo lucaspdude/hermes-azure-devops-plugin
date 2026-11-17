@@ -1,0 +1,265 @@
+"""The read-only backend of the Azure DevOps desktop panel.
+
+The routes reuse the same client class, credential route and error taxonomy as
+the agent tools (one PAT, one error shape), but they read the settings straight
+from the active profile's config - the backend is loaded by the gateway as a
+standalone file, and it must not touch the toolkit's shared context the agent
+tools bind at registration.
+
+The canonical state is the Azure DevOps API itself: the panel keeps a module
+level cache for ~15s to absorb polling, invalidated by the tools' write event.
+
+Mounted at ``/api/plugins/azure-devops/`` by the gateway when the plugin is in
+``plugins.enabled``. Read-only by construction: only GET routes exist.
+"""
+
+import sys
+import threading
+import time
+from pathlib import Path
+from typing import Any, Callable
+
+from fastapi import APIRouter, HTTPException, Request
+
+_PLUGIN_ROOT = str(Path(__file__).resolve().parent.parent)
+if _PLUGIN_ROOT not in sys.path:
+    sys.path.insert(0, _PLUGIN_ROOT)
+
+from hermes_plugin_modules import AdoError, decode_json  # noqa: E402
+
+router = APIRouter()
+
+#: The plugin id in ``plugins.entries.<id>.settings`` (the manifest name).
+PLUGIN_ID = "azure-devops"
+
+#: The module-level cache: one instance per process, invalidated by events.
+_CACHE_LOCK = threading.Lock()
+_CACHE: dict[tuple, tuple[float, Any]] = {}
+CACHE_SECONDS = 15.0
+
+
+def _cache_get(key: tuple) -> Any | None:
+    with _CACHE_LOCK:
+        hit = _CACHE.get(key)
+        if hit is None:
+            return None
+        at, value = hit
+        if time.monotonic() - at > CACHE_SECONDS:
+            return None
+        return value
+
+
+def _cache_put(key: tuple, value: Any) -> None:
+    with _CACHE_LOCK:
+        _CACHE[key] = (time.monotonic(), value)
+
+
+def cache_invalidate() -> None:
+    """The write tools' event lands here: the next read refetches."""
+    with _CACHE_LOCK:
+        _CACHE.clear()
+
+
+def _plugin_settings() -> dict[str, Any]:
+    """The settings of the plugin, from the active profile's config."""
+    try:
+        from hermes_cli.config import load_config
+
+        config = load_config()
+        entries = (config.get("plugins") or {}).get("entries") or {}
+        return (entries.get(PLUGIN_ID) or {}).get("settings") or {}
+    except Exception:
+        return {}
+
+
+def _panel_client() -> Any:
+    """A client for one panel call: profile settings, secret scope, no global state."""
+    # The toolkit's build_client reads the toolkit context bound by the agent
+    # registration. When that binding exists (plugin enabled and loaded), reuse
+    # it: the panel then sees exactly what the tools see.
+    from toolkit import build_client as agent_client
+
+    try:
+        return agent_client()
+    except AdoError:
+        # No binding (backend mounted before the agent load): build from the
+        # profile config directly.
+        settings = _plugin_settings()
+        cfg_module = importlib.import_module("config")
+        cfg = cfg_module.load_config(_FakeContext(settings))
+        from auth import resolve_pat
+
+        pat = resolve_pat()
+        client_module = importlib.import_module("client")
+        return client_module.AdoClient(cfg, pat)
+
+
+class _FakeContext:
+    """The settings surface for the fallback client (never rebinds the toolkit)."""
+
+    def __init__(self, settings: dict[str, Any]) -> None:
+        self._settings = dict(settings)
+
+    def get_config(self, key: str, default: Any = None) -> Any:
+        return self._settings.get(key, default)
+
+
+import importlib  # noqa: E402
+
+
+def _overview_payload(client: Any) -> dict[str, Any]:
+    """Pull requests of the user, work items assigned to them, recent builds.
+
+    The identity comes from ``connectionData``; a PAT without the Identity
+    scope degrades: the parts that do not need the identity are still listed.
+    """
+    from hermes_plugin_modules import authenticated_user_id
+
+    identity_warning = None
+    try:
+        user_id = authenticated_user_id(client)
+    except AdoError as exc:
+        identity_warning = exc.message
+        user_id = None
+
+    pull_requests: list[dict[str, Any]] = []
+    work_items: list[dict[str, Any]] = []
+    builds: list[dict[str, Any]] = []
+
+    if user_id:
+        org = client.config.organization
+        response = client.get(
+            f"/{org}/_apis/git/pullrequests",
+            params={"searchCriteria.status": "active", "$top": 20},
+        )
+        payload = decode_json(response)
+        mine = [
+            item
+            for item in payload.get("value", [])
+            if user_id
+            in {
+                str((item.get("createdBy") or {}).get("id") or ""),
+                *[
+                    str((reviewer or {}).get("id") or "")
+                    for reviewer in item.get("reviewers") or []
+                ],
+            }
+        ]
+        pull_requests = [
+            {
+                "id": item.get("pullRequestId"),
+                "title": item.get("title"),
+                "repository": (item.get("repository") or {}).get("name"),
+                "isDraft": item.get("isDraft"),
+            }
+            for item in mine
+        ]
+
+        wiql = (
+            "SELECT [System.Id] FROM WorkItems WHERE [System.AssignedTo] = @me "
+            "ORDER BY [System.ChangedDate] DESC"
+        )
+        response = client.post("/_apis/wit/wiql", json={"query": wiql}, params={"$top": 20})
+        ids = [item.get("id") for item in (decode_json(response).get("workItems") or [])][:20]
+        if ids:
+            response = client.get(
+                "/_apis/wit/workitems", params={"ids": ",".join(str(i) for i in ids)}
+            )
+            work_items = [
+                {
+                    "id": item.get("id"),
+                    "type": (item.get("fields") or {}).get("System.WorkItemType"),
+                    "title": (item.get("fields") or {}).get("System.Title"),
+                    "state": (item.get("fields") or {}).get("System.State"),
+                }
+                for item in decode_json(response).get("value", [])
+            ]
+
+        response = client.get(f"/{org}/_apis/build/builds", params={"$top": 50})
+        builds = [
+            {
+                "id": item.get("id"),
+                "buildNumber": item.get("buildNumber"),
+                "status": item.get("status"),
+                "result": item.get("result"),
+                "definition": (item.get("definition") or {}).get("name"),
+            }
+            for item in decode_json(response).get("value", [])
+            if ((item.get("requestedFor") or {}).get("id") == user_id)
+        ][:10]
+
+    payload: dict[str, Any] = {
+        "pullRequests": pull_requests,
+        "workItems": work_items,
+        "builds": builds,
+    }
+    if identity_warning:
+        payload["identityWarning"] = identity_warning
+    return payload
+
+
+def _build_overview() -> dict[str, Any]:
+    client = _panel_client()
+    try:
+        return _overview_payload(client)
+    finally:
+        close = getattr(client, "close", None)
+        if close:
+            close()
+
+
+def _served(key: tuple, build: Callable[[], Any]) -> Any:
+    """Cache-or-build, against the module-level store (polling absorbs here)."""
+    hit = _cache_get(key)
+    if hit is not None:
+        return hit
+    value = build()
+    _cache_put(key, value)
+    return value
+
+
+@router.get("/overview")
+def overview(request: Request) -> dict[str, Any]:
+    """The activity of the authenticated user (the panel's only aggregate)."""
+    try:
+        return _served(("overview",), _build_overview)
+    except AdoError as exc:
+        raise _panel_error(exc) from exc
+
+
+@router.get("/pull-requests/{pull_request_id}")
+def pull_request_detail(pull_request_id: int, request: Request) -> dict[str, Any]:
+    """One pull request, the same payload the agent tool answers."""
+    try:
+        def build() -> dict[str, Any]:
+            client = _panel_client()
+            try:
+                response = client.get(f"/_apis/git/pullrequests/{pull_request_id}")
+                return {"pullRequest": decode_json(response)}
+            finally:
+                close = getattr(client, "close", None)
+                if close:
+                    close()
+
+        return _served(("pull-requests", pull_request_id), build)
+    except AdoError as exc:
+        raise _panel_error(exc) from exc
+
+
+@router.get("/builds/{build_id}")
+def build_detail(build_id: int, request: Request) -> dict[str, Any]:
+    """One build, the same payload the agent tool answers."""
+    try:
+        def build() -> dict[str, Any]:
+            client = _panel_client()
+            try:
+                response = client.get(f"/_apis/build/builds/{build_id}")
+                return {"build": decode_json(response)}
+            finally:
+                close = getattr(client, "close", None)
+                if close:
+                    close()
+
+        return _served(("builds", build_id), build)
+    except AdoError as exc:
+        raise _panel_error(exc) from exc

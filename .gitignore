@@ -1,2 +1,5 @@
 .pi/
 .agents/
+.openspec-store/
+__pycache__/
+*.pyc

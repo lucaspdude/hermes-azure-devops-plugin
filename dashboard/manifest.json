@@ -1,0 +1,11 @@
+{
+  "name": "azure-devops",
+  "label": "Azure DevOps",
+  "description": "Panel of your own Azure DevOps activity: pull requests you own or review, work items assigned to you and your recent builds. Read-only; writes go through the agent.",
+  "icon": "GitPullRequest",
+  "version": "0.1.0",
+  "tab": {
+    "path": "/azure-devops"
+  },
+  "api": "plugin_api.py"
+}
