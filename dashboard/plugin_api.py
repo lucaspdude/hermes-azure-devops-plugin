@@ -72,26 +72,34 @@ def _plugin_settings() -> dict[str, Any]:
         return {}
 
 
+class _ProfileSettingsContext:
+    """A settings context that reads plugins.entries.<id>.settings from the
+    profile config the gateway already loaded - never the toolkit's global."""
+
+    def get_config(self, key: str, default: Any = None) -> Any:
+        try:
+            from hermes_cli.config import load_config
+
+            config = load_config()
+            entries = (config.get("plugins") or {}).get("entries") or {}
+            settings = (entries.get(PLUGIN_ID) or {}).get("settings") or {}
+        except Exception:
+            settings = {}
+        return settings.get(key, default)
+
+
 def _panel_client() -> Any:
-    """A client for one panel call: profile settings, secret scope, no global state."""
-    # The toolkit's build_client reads the toolkit context bound by the agent
-    # registration. When that binding exists (plugin enabled and loaded), reuse
-    # it: the panel then sees exactly what the tools see.
-    from toolkit import build_client as agent_client
+    """A client for one panel call: profile settings, secret scope, no global state.
 
-    try:
-        return agent_client()
-    except AdoError:
-        # No binding (backend mounted before the agent load): build from the
-        # profile config directly.
-        settings = _plugin_settings()
-        cfg_module = importlib.import_module("config")
-        cfg = cfg_module.load_config(_FakeContext(settings))
-        from auth import resolve_pat
+    The backend binds its OWN settings context (a fresh one per call) instead of
+    the toolkit's global: binding the global here would clobber the binding the
+    agent tools registered, and every agent tool call would then read the panel's
+    empty settings.
+    """
+    bind_context(_ProfileSettingsContext())
+    from hermes_plugin_modules import build_client
 
-        pat = resolve_pat()
-        client_module = importlib.import_module("client")
-        return client_module.AdoClient(cfg, pat)
+    return build_client()
 
 
 class _FakeContext:
@@ -103,8 +111,6 @@ class _FakeContext:
     def get_config(self, key: str, default: Any = None) -> Any:
         return self._settings.get(key, default)
 
-
-import importlib  # noqa: E402
 
 
 def _overview_payload(client: Any) -> dict[str, Any]:

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { jsx, jsxs } from 'react/jsx-runtime'
-import { ROUTES_AREA, SIDEBAR_NAV_AREA, STATUSBAR_AREAS } from '@hermes/plugin-sdk'
+import { ROUTES_AREA, SIDEBAR_NAV_AREA, STATUSBAR_AREAS, host } from '@hermes/plugin-sdk'
 
 const PLUGIN_ID = 'azure-devops'
 const PAGE_PATH = '/azure-devops'
