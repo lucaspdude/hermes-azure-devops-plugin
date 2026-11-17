@@ -29,6 +29,19 @@ from .toolkit import args_of, client_for, tool_spec
 CONNECTION_DATA_ROUTE = "/_apis/connectionData"
 
 
+def authenticated_user_id(adoc: Any) -> str:
+    """The id of the user the PAT belongs to, resolved per call (never cached)."""
+    payload = decode_json(adoc.get(CONNECTION_DATA_ROUTE))
+    authenticated = _section(payload, "authenticatedUser")
+    user_id = (authenticated or {}).get("id")
+    if not user_id:
+        raise AdoError(
+            CODE_UPSTREAM_ERROR,
+            "Azure DevOps did not return the authenticated user: the PAT may lack the "
+            "Identity scope, and voting as another identity is refused.",
+        )
+    return str(user_id)
+
 def handle_get_my_identity(args: dict, **kwargs) -> dict[str, Any]:
     """The identity of the user the PAT belongs to."""
     adoc = client_for(kwargs)

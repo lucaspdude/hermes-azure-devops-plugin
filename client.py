@@ -167,6 +167,41 @@ class AdoClient:
             "POST", path, params=params, json=json, content=content, headers=headers
         )
 
+    def patch(
+        self,
+        path: str,
+        *,
+        params: Mapping[str, Any] | None = None,
+        json: Any = None,
+        content: bytes | str | None = None,
+        headers: Mapping[str, str] | None = None,
+    ) -> httpx.Response:
+        return self.request(
+            "PATCH", path, params=params, json=json, content=content, headers=headers
+        )
+
+    def put(
+        self,
+        path: str,
+        *,
+        params: Mapping[str, Any] | None = None,
+        json: Any = None,
+        content: bytes | str | None = None,
+        headers: Mapping[str, str] | None = None,
+    ) -> httpx.Response:
+        return self.request(
+            "PUT", path, params=params, json=json, content=content, headers=headers
+        )
+
+    def delete(
+        self,
+        path: str,
+        *,
+        params: Mapping[str, Any] | None = None,
+        headers: Mapping[str, str] | None = None,
+    ) -> httpx.Response:
+        return self.request("DELETE", path, params=params, headers=headers)
+
 
 def _normalize_path(path: str) -> str:
     return "/" + str(path).strip().strip("/")
