@@ -149,12 +149,12 @@ def _overview_payload(client: Any) -> dict[str, Any]:
         # /{project}/_apis/git/pullrequests. O painel varre os projetos da
         # organizacao (a mesma rota que list_projects usa) e filtra os meus.
         org = client.config.organization
-        projects_payload = decode_json(client.get(f"/{org}/_apis/projects", params={"$top": 200}))
+        projects_payload = decode_json(client.get("/_apis/projects", params={"$top": 200}))
         project_ids = [p.get("id") for p in projects_payload.get("value", [])]
         mine = []
         for pid in project_ids:
             response = client.get(
-                f"/{org}/{pid}/_apis/git/pullrequests",
+                f"/{pid}/_apis/git/pullrequests",
                 params={"searchCriteria.status": "active", "$top": 10},
             )
             for item in decode_json(response).get("value", []):
@@ -185,7 +185,7 @@ def _overview_payload(client: Any) -> dict[str, Any]:
         ids: list[Any] = []
         for pid in project_ids:
             response = client.post(
-                f"/{org}/{pid}/_apis/wit/wiql", json={"query": wiql}, params={"$top": 20}
+                f"/{pid}/_apis/wit/wiql", json={"query": wiql}, params={"$top": 20}
             )
             ids.extend(item.get("id") for item in decode_json(response).get("workItems", []))
         ids = ids[:20]
@@ -205,7 +205,7 @@ def _overview_payload(client: Any) -> dict[str, Any]:
 
         build_rows = []
         for pid in project_ids:
-            response = client.get(f"/{org}/{pid}/_apis/build/builds", params={"$top": 10})
+            response = client.get(f"/{pid}/_apis/build/builds", params={"$top": 10})
             for item in decode_json(response).get("value", []):
                 if ((item.get("requestedFor") or {}).get("id") == user_id):
                     item = dict(item)
