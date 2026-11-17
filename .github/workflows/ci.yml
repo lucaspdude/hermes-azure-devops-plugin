@@ -58,7 +58,7 @@ jobs:
           HERMES_HOME: ${{ runner.temp }}/hermes-home
         run: |
           mkdir -p ../plugin-tree
-          cp -R $(git ls-files | tr '\n' ' ') ../plugin-tree/
+          git ls-files -z | rsync -R --files-from=- . ../plugin-tree/
           cd ../plugin-tree
           "$GITHUB_WORKSPACE/_hermes/.venv/bin/python" "$GITHUB_WORKSPACE/_hermes/hermes_cli/main.py" plugins validate . --install-deps
 
