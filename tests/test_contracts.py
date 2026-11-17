@@ -136,3 +136,18 @@ class WiqlTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+    def test_the_owner_project_comes_from_the_real_wiki_remote_url(self):
+        # Formato real verificado contra a API: /{org}/{project}/_wiki/wikis/{id}
+        wiki = {
+            "remoteUrl": (
+                "https://dev.azure.com/contoso/"
+                "8a3f9d20-1111-4c2e-8d54-9f1e2d3c4b5a/_wiki/wikis/"
+                "be05f447-9b93-4735-a30a-e02b5ef83707"
+            )
+        }
+        self.assertEqual(
+            contracts.wiki_owner_project(wiki, "contoso"),
+            "8a3f9d20-1111-4c2e-8d54-9f1e2d3c4b5a",
+        )

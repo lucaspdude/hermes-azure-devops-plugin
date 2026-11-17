@@ -29,6 +29,7 @@ BRANCH_PREFIX = "refs/heads/"
 
 #: The marker of the REST routes in a path.
 _APIS_MARKER = "_apis"
+_WIKI_MARKER = "_wiki"  # the real remoteUrl shape: /{org}/{project}/_wiki/wikis/{id}
 
 
 def page_params(top: int | None = None, token: str | None = None) -> dict[str, str]:
@@ -68,11 +69,12 @@ def wiki_owner_project(wiki: Mapping[str, Any], organization: str = "") -> str:
     if not remote_url:
         return ""
     segments = [segment for segment in urlsplit(remote_url).path.split("/") if segment]
-    if _APIS_MARKER not in segments:
+    marker = next((m for m in (_APIS_MARKER, _WIKI_MARKER) if m in segments), None)
+    if marker is None:
         return ""
-    index = segments.index(_APIS_MARKER)
+    index = segments.index(marker)
     if index < 2:
-        # ``/{organization}/_apis/...``: a wiki of the organization, no owner.
+        # ``/{organization}/_wiki/...``: a wiki of the organization, no owner.
         return ""
     owner = segments[index - 1]
     if organization and owner.lower() == organization.lower():
