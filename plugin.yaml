@@ -14,6 +14,14 @@ requires_env:
       installed.
     url: https://learn.microsoft.com/en-us/azure/devops/integrate/get-started/authentication/personal-access-token
     secret: true
+license: MIT
+homepage: https://github.com/lucaspdude/hermes-azure-devops-plugin
+tags:
+  - azure-devops
+  - devops
+  - pull-requests
+  - builds
+  - work-items
 provides_tools:
   - azure_devops_list_projects
   - azure_devops_get_project

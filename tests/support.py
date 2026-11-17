@@ -49,6 +49,8 @@ class FakeContext:
     def __init__(self, settings=None):
         self._settings = dict(settings or {})
         self.registered_tools = []
+        self.registered_skills = []
+        self.registered_commands = []
 
     def get_config(self, key, default=None):
         return self._settings.get(key, default)
@@ -56,6 +58,22 @@ class FakeContext:
     def register_tool(self, **kwargs):
         self.registered_tools.append(kwargs)
         return kwargs
+
+    def register_skill(self, name, path):
+        self.registered_skills.append((name, str(path)))
+        return (name, str(path))
+
+    def register_command(self, name, handler, description="", args_hint=""):
+        self.registered_commands.append(
+            {"name": name, "handler": handler, "description": description}
+        )
+        return {"name": name}
+
+    def register_cli_command(self, name, setup_fn=None, handler_fn=None, description=""):
+        self.registered_commands.append(
+            {"name": name, "cli": True, "handler": handler_fn}
+        )
+        return {"name": name}
 
 
 def mock_transport(handler):

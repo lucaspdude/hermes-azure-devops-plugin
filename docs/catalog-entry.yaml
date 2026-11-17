@@ -1,0 +1,33 @@
+# Entrada preparada para o catalogo oficial do Hermes
+# (plugin-catalog/azure-devops.yaml no repo NousResearch/hermes-agent).
+# O PR de catalogo preenche o sha do commit revisado (40 hex) e o version.
+
+name: azure-devops
+repo: https://github.com/lucaspdude/hermes-azure-devops-plugin
+sha: "<40-hex sha do commit pinado>"
+subdir: ""
+title: Azure DevOps
+description: >-
+  Azure DevOps for the Hermes agent: 44 native tools over projects, repositories,
+  builds, pull requests, work items, wikis and releases (read and write), a
+  Desktop panel of your own activity (read-only) and an embedded guide that maps
+  the PAT scope every operation needs. Credential flows through the Hermes secret
+  scope (AZURE_DEVOPS_PAT_TOKEN); every failure answers a JSON envelope with the
+  message of the API; writes are never retried and branch policies are never
+  bypassed. Disclosure - every tool call sends requests to dev.azure.com (and
+  vsrm.dev.azure.com for Release Management) with the configured organization;
+  the credential is read only via agent.secret_scope.get_secret; write tools
+  change Azure DevOps state when approved; the plugin never retries a write.
+maintainer: lucaspdude
+tier: community
+category: tools
+requires_hermes: ">=0.23"
+docs_url: https://github.com/lucaspdude/hermes-azure-devops-plugin#readme
+version: "0.1.0"
+readme: true
+platforms: []
+capabilities:
+  provides_tools: []
+  provides_hooks: []
+  requires_env:
+    - AZURE_DEVOPS_PAT_TOKEN
