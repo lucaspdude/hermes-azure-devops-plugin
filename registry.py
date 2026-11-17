@@ -1,8 +1,9 @@
 """Single source of truth for the plugin's tools.
 
-``TOOLS`` is the only list of tools in the package: ``register(ctx)`` registers
-exactly what is declared here, and the manifest's ``provides_tools`` block is
-generated from the same list, so the two cannot drift apart.
+``TOOLS`` is the only list of tools in the package: this module aggregates the
+tools of every domain module into it, ``register(ctx)`` registers exactly what
+is declared here, and the manifest's ``provides_tools`` block is generated from
+the same list, so the two cannot drift apart.
 
 The module also owns the response contract of every tool: a handler returns
 the payload and may raise, and ``guarded_handler`` wraps it into the JSON
@@ -100,3 +101,36 @@ def guarded_handler(handler: Callable[..., Any]) -> Callable[..., str]:
             return failure_response(exc)
 
     return guarded
+
+
+#: The modules of tools, aggregated into ``TOOLS`` below. The import is at the
+#: end of the module on purpose: the modules import ``ToolSpec`` from here, so
+#: the definition has to exist before the import happens.
+from . import (  # noqa: E402
+    tools_artifacts,
+    tools_builds,
+    tools_git,
+    tools_identity,
+    tools_policies,
+    tools_projects,
+    tools_pull_requests,
+    tools_releases,
+    tools_wiki,
+    tools_work_items,
+)
+
+#: The registry is the single source of truth: every module of tools adds its
+#: tools here, and the manifest is generated from this very list.
+for _tool_module in (
+    tools_projects,
+    tools_builds,
+    tools_pull_requests,
+    tools_work_items,
+    tools_wiki,
+    tools_git,
+    tools_artifacts,
+    tools_identity,
+    tools_policies,
+    tools_releases,
+):
+    TOOLS.extend(_tool_module.TOOLS)

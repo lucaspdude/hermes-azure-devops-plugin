@@ -110,7 +110,7 @@ def _repository(item: Any) -> dict[str, Any]:
 TOOLS: list[ToolSpec] = [
     tool_spec(
         "azure_devops_list_projects",
-        "List the projects of the Azure DevOps organization, with id, name and state.",
+        "List the projects of the Azure DevOps organization, with id, name and state. Use it to find the project a later call is about.",
         {
             "type": "object",
             "properties": {
@@ -129,7 +129,7 @@ TOOLS: list[ToolSpec] = [
     ),
     tool_spec(
         "azure_devops_get_project",
-        "Get one project of the Azure DevOps organization, by name or by id.",
+        "Get one project of the Azure DevOps organization, by name or by id. Use it to confirm a project exists or to read its details.",
         {
             "type": "object",
             "properties": {
@@ -144,7 +144,7 @@ TOOLS: list[ToolSpec] = [
     ),
     tool_spec(
         "azure_devops_list_repositories",
-        "List the Git repositories of a project, with id, name, url and default branch.",
+        "List the Git repositories of a project, with id, name, url and default branch. Use it to find the repository a later call is about.",
         {
             "type": "object",
             "properties": {
@@ -169,7 +169,7 @@ TOOLS: list[ToolSpec] = [
     ),
     tool_spec(
         "azure_devops_get_repository",
-        "Get one Git repository of a project, by id or by name.",
+        "Get one Git repository of a project, by id or by name. Use it to read the details of a repository you already know.",
         {
             "type": "object",
             "properties": {

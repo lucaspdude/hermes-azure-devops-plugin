@@ -290,7 +290,7 @@ TOOLS: list[ToolSpec] = [
     tool_spec(
         "azure_devops_get_work_item",
         "Get one work item by id, with its type, title and state (and the other fields asked "
-        "for).",
+        "for). Use it to read a work item you found.",
         {
             "type": "object",
             "properties": {

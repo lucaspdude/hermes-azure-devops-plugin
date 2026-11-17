@@ -4,7 +4,7 @@
 
 - [x] 1.1 Registrar a tabela de rotas verificadas (data, organizacao de referencia, codigo por rota e nota de contrato) em `docs/ado-endpoints.md` no repo — verificar que o arquivo cobre as 31 tools de leitura, incluindo as rotas que falharam
 - [x] 1.2 Aplicar os contratos descobertos na verificacao: paging de builds por `$top` (nunca `top`), `branch` como nome curto nos commits, wiki sempre com o projeto dono no path (extraido do `remoteUrl`), WIQL sempre com corpo JSON — verificar por teste que o parametro `$top` vai codificado (`%24top`) e que a wiki e chamada no projeto dono
-- [ ] 1.4 Repetir a verificação de rotas **a partir do hostgator** (o caminho de saída de rede do host pode diferir do da máquina de desenvolvimento) e anexar o resultado ao registro — verificar que o mesmo conjunto de rotas responde igual no host
+- [x] 1.4 Repetir a verificação de rotas **a partir do hostgator** (o caminho de saída de rede do host pode diferir do da máquina de desenvolvimento) e anexar o resultado ao registro — verificar que o mesmo conjunto de rotas responde igual no host
 - [x] 1.3 Trocar a tool de policies para `/_apis/policy/configurations` (policy configurations do projeto) e documentar que policy por repositorio nao e alcancavel com PAT classico — verificar com `MockTransport` a rota e a mensagem de erro
 
 ## 2. Tools de projetos e repositorios
@@ -43,8 +43,8 @@
 
 ## 8. Registro, manifesto e validacao
 
-- [ ] 8.1 Agregar os modulos em `registry.py` e atualizar `provides_tools` no manifesto — verificar que o teste de consistencia passa
-- [ ] 8.2 Revisar as descricoes de todas as tools (o que faz e quando usar) e o `check_fn` de credencial — verificar que toda tool tem `check_fn` e descricao nao vazia, e que a descricao nao carrega conteudo que pertence as skills (o contrato e as receitas ficam nas skills, nao no schema)
-- [ ] 8.3 Conferir item a item a paridade com as 23 tools de leitura do MCP (`hub/workflow/tools/azure-devops/src/tools.ts`) e registrar as diferencas deliberadas — verificar com a lista comparada anexada ao PR
-- [ ] 8.4 Rodar a suite, `hermes plugins validate . --install-deps` e `hermes plugins doctor . --ci` **no hostgator** — verificar que tudo termina limpo no host alvo
-- [ ] 8.5 Fazer o smoke de leitura no hostgator com PAT real (projetos, repos, builds com paginação por `$top`, PRs, WIQL, wiki pages no projeto dono, commits por branch curto) — verificar que os retornos batem com o esperado e que nenhuma chamada falha por versão de API
+- [x] 8.1 Agregar os modulos em `registry.py` e atualizar `provides_tools` no manifesto — verificar que o teste de consistencia passa
+- [x] 8.2 Revisar as descricoes de todas as tools (o que faz e quando usar) e o `check_fn` de credencial — verificar que toda tool tem `check_fn` e descricao nao vazia, e que a descricao nao carrega conteudo que pertence as skills (o contrato e as receitas ficam nas skills, nao no schema)
+- [x] 8.3 Conferir item a item a paridade com as 23 tools de leitura do MCP (`hub/workflow/tools/azure-devops/src/tools.ts`) e registrar as diferencas deliberadas — verificar com a lista comparada anexada ao PR
+- [x] 8.4 Rodar a suite, `hermes plugins validate . --install-deps` e `hermes plugins doctor . --ci` **no hostgator** — verificar que tudo termina limpo no host alvo
+- [ ] 8.5 Fazer o smoke de leitura no hostgator com PAT real (projetos, repos, builds com paginação por `$top`, PRs, WIQL, wiki pages no projeto dono, commits por branch curto) — verificar que os retornos batem com o esperado e que nenhuma chamada falha por versão de API **BLOCKED (parcial)**: suite/validate/doctor passam no host, mas o smoke com PAT nao roda — `AZURE_DEVOPS_PAT_TOKEN` ainda nao existe no perfil do hostgator (verificado no secret scope real: `pat_presente: False`); o usuario vai configurar o PAT no `.env` do perfil. Nenhuma chamada autenticada foi feita.

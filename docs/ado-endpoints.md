@@ -98,3 +98,81 @@ Supplementary observations of the verification:
 
 Write routes (`POST`, `PATCH`, `PUT`, `DELETE`) were **not** exercised: the
 verification was read only, so the reference organization was not dirtied.
+
+## Verificação a partir do hostgator (2026-11-17)
+
+The same battery of routes was repeated **from the hostgator**, because the
+network path of the host can differ from the one of the development machine.
+
+| | |
+|---|---|
+| Date | 2026-11-17 (UTC) |
+| Host | `hubcredito-agent` (egress `129.121.50.54`) |
+| Machine of comparison | `Lucass-MacBook-Pro-383.local` (egress `187.36.129.212`) |
+| Organization | `IntegracaoFinanceira` |
+| Project / repository | `Financeiro Api` / `administracao-api` (`ingestao-dados` for the pull request routes) |
+| Credential | **none** — the PAT is not in the host profile yet |
+
+Because the PAT is not in the host profile, each route was called twice, with
+`curl` and the headers of the plugin:
+
+- **with the headers of the plugin and no PAT** (`Authorization: Basic <empty>`,
+  `Accept: application/json`): the organization redirects to the sign-in page
+  (**302**);
+- **with the redirect suppressed** (`X-TFS-FedAuthRedirect: Suppress`): the API
+  answers the real status of the credential (**401**).
+
+**401 is a missing credential, not a broken route.** The plugin does not even
+reach the API without the PAT: `check_fn` marks the tool as "needs auth" and
+the handler answers `missing_credential`.
+
+| Route | Hostgator | Mac | Note |
+|---|---|---|---|
+| `GET /{org}/_apis/projects` | 302 / **401** | 302 / 401 | The list is of the **organization**. |
+| `GET /{org}/_apis/projects/{project}` | 302 / **401** | 302 / 401 | The project by name. |
+| `GET /{org}/{project}/_apis/git/repositories` | 302 / **401** | 302 / 401 | — |
+| `GET /{org}/{project}/_apis/git/repositories/{repo}` | 302 / **401** | 302 / 401 | — |
+| `GET /{org}/{project}/_apis/build/definitions` | 302 / **401** | 302 / 401 | — |
+| `GET /{org}/{project}/_apis/build/builds?%24top=1` | 302 / **401** | 302 / 401 | The paging parameter travels encoded (`%24top`). |
+| `GET /{org}/{project}/_apis/build/builds/{buildId}` | 302 / **401** | 302 / 401 | The id is a placeholder: without a PAT the builds cannot be enumerated. |
+| `GET /{org}/{project}/_apis/build/builds/{buildId}/changes` | 302 / **401** | 302 / 401 | — |
+| `GET /{org}/{project}/_apis/build/builds/{buildId}/timeline` | 302 / **401** | 302 / 401 | — |
+| `GET /{org}/{project}/_apis/build/builds/{buildId}/artifacts` | 302 / **401** | 302 / 401 | — |
+| `GET /{org}/{project}/_apis/git/repositories/{repo}/pullrequests?status=active` | 302 / **401** | 302 / 401 | — |
+| `GET /{org}/{project}/_apis/git/repositories/{repo}/pullRequests/{pullRequestId}` | 302 / **401** | 302 / 401 | A real pull request of the reference organization (3126). |
+| `GET /{org}/{project}/_apis/git/repositories/{repo}/pullRequests/{pullRequestId}/threads` | 302 / **401** | 302 / 401 | — |
+| `GET /{org}/{project}/_apis/git/repositories/{repo}/pullRequests/{pullRequestId}/labels` | 302 / **401** | 302 / 401 | — |
+| `GET /{org}/{project}/_apis/git/repositories/{repo}/labels` | 302 / **401** | 302 / 401 | The route that answers 404 with a PAT stays hidden behind the credential. |
+| `POST /{org}/{project}/_apis/wit/wiql` (with body) | 302 / **401** | 302 / 401 | The route only answers a POST. |
+| `GET /{org}/_apis/wit/workitems/{id}` | 302 / **401** | 302 / 401 | A real work item of the reference organization (674). |
+| `GET /{org}/_apis/wit/workitems?ids={id}` | 302 / **401** | 302 / 401 | — |
+| `GET /{org}/_apis/wiki/wikis` | 302 / **401** | 302 / 401 | The list is of the **organization**. |
+| `GET /{org}/{project}/_apis/wiki/wikis` | 302 / **401** | 302 / 401 | — |
+| `GET /{org}/{project}/_apis/wiki/wikis/{wikiId}/pages` | 302 / **401** | 302 / 401 | The wiki id is a placeholder: without a PAT the wikis cannot be enumerated. |
+| `GET /{org}/{project}/_apis/wiki/wikis/{wikiId}/pages?path=/Home` | 302 / **401** | 302 / 401 | — |
+| `GET /{org}/{project}/_apis/git/repositories/{repo}/refs?filter=heads` | 302 / **401** | 302 / 401 | — |
+| `GET /{org}/{project}/_apis/git/repositories/{repo}/refs/heads/master` | 302 / **401** | 302 / 401 | The branch is the **short name**. |
+| `GET /{org}/{project}/_apis/git/repositories/{repo}/commits` | 302 / **401** | 302 / 401 | — |
+| `GET /{org}/{project}/_apis/git/repositories/{repo}/commits/{commitId}` | 302 / **401** | 302 / 401 | A real commit of the reference organization. |
+| `GET /{org}/{project}/_apis/git/repositories/{repo}/refs?filter=tags` | 302 / **401** | 302 / 401 | — |
+| `GET /{org}/_apis/connectionData?api-version=7.0-preview.1` | **200** | 200 | The only route of the set that answers **without** a PAT: the identity of the connection is public. |
+| `GET /{org}/_apis/connectionData?api-version=7.1` | **400** | 400 | The version of the API is per endpoint: `7.1` is refused, as recorded above. |
+| `GET /{org}/{project}/_apis/policy/configurations` | 302 / **401** | 302 / 401 | The viable route of policies with a PAT. |
+| `GET /{org}/{project}/_apis/policies/repositories/{repo}` | **404** | 404 | Same answer as in the planning: the route does not reach a classic PAT. |
+| `GET vsrm.dev.azure.com/{org}/{project}/_apis/release/definitions` | 302 / **401** | 302 / 401 | — |
+| `GET vsrm.dev.azure.com/{org}/{project}/_apis/release/releases` | 302 / **401** | 302 / 401 | — |
+| `GET vsrm.dev.azure.com/{org}/{project}/_apis/release/releases/{releaseId}` | 302 / **401** | 302 / 401 | The id is a placeholder: without a PAT the releases cannot be enumerated. |
+| `POST /{org}/{project}/_apis/wit/wiql` (without body) | **411** | 411 | The route requires a body — the contract of the planning verification. |
+| `GET /{org}/{project}/_apis/wit/wiql` | **405** | 405 | The route only answers a POST. |
+
+**Result:** the 38 routes answered **with the same code** on the hostgator and
+on the development machine (the two outputs of the probe are identical, route by
+route). No route failed because of the network path: the host reaches
+`dev.azure.com` and `vsrm.dev.azure.com` and receives the same answers,
+including the known traps (400 of `connectionData` on `7.1`, 404 of the
+policies by repository, 411 of the WIQL without body, 405 of the WIQL on GET).
+
+The authenticated answers (the 200 of the planning) are still **pending**: they
+need the PAT in the profile of the host, which the user will configure. The
+smoke of reading on the host is therefore blocked by the credential, not by the
+routes.

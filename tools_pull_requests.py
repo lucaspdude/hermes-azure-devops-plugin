@@ -216,7 +216,7 @@ TOOLS: list[ToolSpec] = [
     tool_spec(
         "azure_devops_list_pull_requests",
         "List the pull requests of a repository, filtered by status (active, abandoned, "
-        "completed, all).",
+        "completed, all). Use it to see what is open or what was merged.",
         {
             "type": "object",
             "properties": {
@@ -254,7 +254,7 @@ TOOLS: list[ToolSpec] = [
     tool_spec(
         "azure_devops_get_pull_request",
         "Get one pull request of a repository by id, with its status, branches, dates and "
-        "reviewers.",
+        "reviewers. Use it to inspect a pull request you already found.",
         {
             "type": "object",
             "properties": {
@@ -282,7 +282,8 @@ TOOLS: list[ToolSpec] = [
     ),
     tool_spec(
         "azure_devops_list_pull_request_comments",
-        "List the comment threads of a pull request, with their author, text, status and dates.",
+        "List the comment threads of a pull request, with their author, text, status and dates. "
+        "Use it to read the discussion of a pull request.",
         {
             "type": "object",
             "properties": {
@@ -310,7 +311,7 @@ TOOLS: list[ToolSpec] = [
     ),
     tool_spec(
         "azure_devops_list_pull_request_labels",
-        "List the labels of a pull request.",
+        "List the labels of a pull request. Use it to read how a pull request was categorized.",
         {
             "type": "object",
             "properties": {

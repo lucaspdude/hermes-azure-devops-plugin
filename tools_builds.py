@@ -300,7 +300,7 @@ def _person(item: Any) -> dict[str, Any]:
 TOOLS: list[ToolSpec] = [
     tool_spec(
         "azure_devops_list_build_definitions",
-        "List the build definitions (pipelines) of a project, with id, name, path and queue status.",
+        "List the build definitions (pipelines) of a project, with id, name, path and queue status. Use it to find the pipeline a build belongs to.",
         {
             "type": "object",
             "properties": {
@@ -329,7 +329,7 @@ TOOLS: list[ToolSpec] = [
     ),
     tool_spec(
         "azure_devops_list_builds",
-        "List the builds of a project, filtered by status and by definition (id or name).",
+        "List the builds of a project, filtered by status and by definition (id or name). Use it to see the recent builds of a project or of a pipeline.",
         {
             "type": "object",
             "properties": {
@@ -368,7 +368,7 @@ TOOLS: list[ToolSpec] = [
     ),
     tool_spec(
         "azure_devops_get_build",
-        "Get one build of a project by id, with its status, result, times and definition.",
+        "Get one build of a project by id, with its status, result, times and definition. Use it to inspect a build you already found.",
         {
             "type": "object",
             "properties": {
@@ -389,7 +389,7 @@ TOOLS: list[ToolSpec] = [
     ),
     tool_spec(
         "azure_devops_get_build_changes",
-        "List the changes of a build: the files it touched and the commits it carried.",
+        "List the changes of a build: the files it touched and the commits it carried. Use it to see what a build actually changed.",
         {
             "type": "object",
             "properties": {
@@ -410,7 +410,7 @@ TOOLS: list[ToolSpec] = [
     ),
     tool_spec(
         "azure_devops_get_build_timeline",
-        "Get the timeline of a build: its steps and tasks, with their times and results.",
+        "Get the timeline of a build: its steps and tasks, with their times and results. Use it to see where a build failed or took long.",
         {
             "type": "object",
             "properties": {
