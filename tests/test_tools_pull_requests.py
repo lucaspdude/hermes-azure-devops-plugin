@@ -9,7 +9,7 @@ import unittest
 
 import httpx
 
-from support import bind_context, call_tool, fake_secret_resolver, mock_transport
+from support import bind_context, call_tool, fake_client, fake_secret_resolver, mock_transport
 
 REPOSITORY = {
     "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
@@ -404,3 +404,60 @@ class ListPullRequestLabelsTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class DaysFilterTest(unittest.TestCase):
+    def setUp(self):
+        bind_context({"organization": "contoso"})
+
+    def test_days_becomes_search_criteria_min_time(self):
+        handler, seen = recorder()
+        result = call_tool(
+            "azure_devops_list_pull_requests",
+            {"project": "Contoso", "repository": "api", "status": "all", "days": 30},
+            transport=mock_transport(handler),
+            secret_resolver=fake_secret_resolver(),
+        )
+        self.assertTrue(result["ok"])
+        params = dict(seen[0].url.params)
+        self.assertIn("searchCriteria.minTime", params)
+        self.assertTrue(params["searchCriteria.minTime"].endswith("Z"))
+
+    def test_days_default_is_seven(self):
+        handler, seen = recorder()
+        call_tool(
+            "azure_devops_list_pull_requests",
+            {"project": "Contoso", "repository": "api", "status": "all"},
+            transport=mock_transport(handler),
+            secret_resolver=fake_secret_resolver(),
+        )
+        from datetime import datetime, timedelta, timezone
+        params = dict(seen[0].url.params)
+        min_time = params.get("searchCriteria.minTime", "")
+        cutoff = datetime.strptime(min_time, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+        self.assertAlmostEqual(
+            cutoff.timestamp(),
+            (datetime.now(timezone.utc) - timedelta(days=7)).timestamp(),
+            delta=120,
+        )
+
+    def test_days_zero_means_no_filter(self):
+        handler, seen = recorder()
+        call_tool(
+            "azure_devops_list_pull_requests",
+            {"project": "Contoso", "repository": "api", "status": "all", "days": 0},
+            transport=mock_transport(handler),
+            secret_resolver=fake_secret_resolver(),
+        )
+        self.assertNotIn("searchCriteria.minTime", dict(seen[0].url.params))
+
+    def test_the_page_size_travels_with_the_dollar_sign(self):
+        handler, seen = recorder()
+        call_tool(
+            "azure_devops_list_pull_requests",
+            {"project": "Contoso", "repository": "api", "status": "all", "top": 25},
+            transport=mock_transport(handler),
+            secret_resolver=fake_secret_resolver(),
+        )
+        params = dict(seen[0].url.params)
+        self.assertEqual(params.get("$top"), "25")

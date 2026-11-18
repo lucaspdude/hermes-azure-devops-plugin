@@ -300,7 +300,7 @@ class ListBuildsTest(unittest.TestCase):
 
         result = call_tool(
             "azure_devops_list_builds",
-            {"project": "Contoso"},
+            {"project": "Contoso", "days": 0},
             transport=mock_transport(handler),
             secret_resolver=fake_secret_resolver(),
         )
@@ -581,3 +581,67 @@ class BuildPaginationTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class BuildsDaysFilterTest(unittest.TestCase):
+    def setUp(self):
+        bind_context({"organization": "contoso"})
+
+    def test_old_builds_are_dropped_after_the_fetch(self):
+        from datetime import datetime, timedelta, timezone
+
+        cutoff_iso = (datetime.now(timezone.utc) - timedelta(days=7)).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+        def handler(request):
+            return httpx.Response(
+                200,
+                json={
+                    "value": [
+                        {"id": 1, "buildNumber": "new", "finishTime": "2026-11-15T10:00:00Z"},
+                        {"id": 2, "buildNumber": "old", "finishTime": "2026-10-01T10:00:00Z"},
+                    ]
+                },
+                request=httpx.Request("GET", "https://x"),
+            )
+
+        result = call_tool(
+            "azure_devops_list_builds",
+            {"project": "Contoso", "days": 7},
+            transport=mock_transport(handler),
+            secret_resolver=fake_secret_resolver(),
+        )
+        numbers = [b["buildNumber"] for b in result["data"]["builds"]]
+        self.assertEqual(numbers, ["new"])
+
+    def test_days_zero_keeps_everything(self):
+        def handler(request):
+            return httpx.Response(
+                200,
+                json={"value": [{"id": 1, "finishTime": "2026-01-01T10:00:00Z"}]},
+                request=httpx.Request("GET", "https://x"),
+            )
+
+        result = call_tool(
+            "azure_devops_list_builds",
+            {"project": "Contoso", "days": 0},
+            transport=mock_transport(handler),
+            secret_resolver=fake_secret_resolver(),
+        )
+        self.assertEqual(len(result["data"]["builds"]), 1)
+
+    def test_no_date_parameter_travels_in_the_query(self):
+        seen = {}
+
+        def handler(request):
+            seen["params"] = dict(request.url.params)
+            return httpx.Response(200, json={"value": []}, request=httpx.Request("GET", "https://x"))
+
+        call_tool(
+            "azure_devops_list_builds",
+            {"project": "Contoso", "days": 7},
+            transport=mock_transport(handler),
+            secret_resolver=fake_secret_resolver(),
+        )
+        self.assertNotIn("minFinishTime", seen["params"])
+        self.assertNotIn("maxFinishTime", seen["params"])
+
