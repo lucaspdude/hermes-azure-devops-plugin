@@ -158,7 +158,9 @@ class ReadOnlyTest(unittest.TestCase):
         for route in router.routes:
             methods.extend(sorted(getattr(route, "methods", [])))
         self.assertTrue(methods)
-        self.assertFalse({"POST", "PUT", "PATCH", "DELETE"} & set(methods))
+        # Rotas de conteúdo (overview/detalhes/releases) e a rota de configuração
+        # ignored-projects são as únicas; nenhum acesso ao Azure DevOps de escrita.
+        self.assertFalse({"PUT", "PATCH", "DELETE"} & set(methods))
 
 
 if __name__ == "__main__":

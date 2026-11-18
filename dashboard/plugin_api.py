@@ -150,7 +150,13 @@ def _overview_payload(client: Any) -> dict[str, Any]:
         # organizacao (a mesma rota que list_projects usa) e filtra os meus.
         org = client.config.organization
         projects_payload = decode_json(client.get("/_apis/projects", params={"$top": 200}))
-        project_ids = [p.get("id") for p in projects_payload.get("value", [])]
+        projects = [
+            p
+            for p in projects_payload.get("value", [])
+            if not _project_ignored(p.get("id"), p.get("name"), client)
+        ]
+        project_ids = [p.get("id") for p in projects]
+        project_by_id = {p.get("id"): p for p in projects}
         mine = []
         for pid in project_ids:
             response = client.get(
@@ -251,6 +257,86 @@ def _served(key: tuple, build: Callable[[], Any]) -> Any:
     value = build()
     _cache_put(key, value)
     return value
+
+
+def _releases_payload(client: Any) -> dict[str, Any]:
+    """Releases recentes dos projetos da organização (mesma varredura do overview)."""
+    from hermes_plugin_modules import decode_json
+
+    org = client.config.organization
+    projects_payload = decode_json(client.get("/_apis/projects", params={"$top": 200}))
+    releases: list[dict[str, Any]] = []
+    for pid in projects_payload.get("value", []):
+        if _project_ignored(pid.get("id"), pid.get("name"), client):
+            continue
+        response = client.get(
+            f"/{org}/{pid.get('id')}/_apis/release/releases", params={"$top": 10}
+        )
+        for item in decode_json(response).get("value", []):
+            releases.append(
+                {
+                    "id": item.get("id"),
+                    "name": item.get("name"),
+                    "status": item.get("status"),
+                    "created": (item.get("createdOn") or ""),
+                    "createdBy": ((item.get("createdBy") or {}).get("displayName") or ""),
+                    "project": pid.get("name"),
+                    "url": ((item.get("_links") or {}).get("web") or {}).get("href"),
+                }
+            )
+    releases.sort(key=lambda item: item.get("created") or "", reverse=True)
+    return {"releases": releases[:20]}
+
+
+def _project_ignored(project_id: Any, project_name: Any, client: Any) -> bool:
+    """Whether the project is in the profile's ignored_projects setting."""
+    names = getattr(client.config, "ignored_project_names", frozenset())
+    ids = getattr(client.config, "ignored_project_ids", frozenset())
+    if project_name and str(project_name).lower() in names:
+        return True
+    if project_id and str(project_id) in ids:
+        return True
+    return False
+
+
+@router.get("/releases")
+def releases(request: Request) -> dict[str, Any]:
+    """Releases recentes dos projetos da organização."""
+    try:
+        def build() -> dict[str, Any]:
+            client = _panel_client()
+            try:
+                return _releases_payload(client)
+            finally:
+                close = getattr(client, "close", None)
+                if close:
+                    close()
+        return _served(("releases",), build)
+    except AdoError as exc:
+        raise _panel_error(exc) from exc
+
+
+@router.post("/settings/ignored-projects")
+async def set_ignored_projects(request: Request) -> dict[str, Any]:
+    """Grava a lista de projetos ignorados na setting do perfil."""
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    projects = body.get("ignored_projects")
+    if not isinstance(projects, list) or not all(isinstance(item, str) for item in projects):
+        return {"ok": False, "error": {"code": "invalid_input", "message": "ignored_projects must be a list of strings"}}
+    try:
+        from hermes_cli.config import load_config, save_config
+
+        config = load_config()
+        entries = config.setdefault("plugins", {}).setdefault("entries", {})
+        settings = entries.setdefault(PLUGIN_ID, {}).setdefault("settings", {})
+        settings["ignored_projects"] = projects
+        save_config(config)
+    except Exception as exc:
+        return {"ok": False, "error": {"code": "upstream_error", "message": str(exc)[:200]}}
+    return {"ok": True, "ignored_projects": projects}
 
 
 @router.get("/overview")
