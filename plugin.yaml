@@ -96,6 +96,19 @@ config_schema:
     description: >-
       Project used when a tool is called without one. Empty means the caller
       has to name the project.
+  ignored_projects:
+    type: list
+    default: []
+    description: >-
+      Projects the panel and listings skip entirely. Accepts project names (matched
+      case-insensitively) or project ids. Purely a display/scan filter: tools still
+      work when explicitly asked about an ignored project.
+  default_days:
+    type: int
+    default: 7
+    description: >-
+      Default lookback window in days for pull requests, builds and work items
+      listings (the panel exposes presets of 7, 30 and 90 days).
   http_timeout_ms:
     type: int
     default: 30000

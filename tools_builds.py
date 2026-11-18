@@ -22,6 +22,7 @@ from .contracts import page_params
 from .errors import CODE_INVALID_INPUT, CODE_NOT_FOUND, AdoError
 from .pagination import extract_continuation_token
 from .registry import ToolSpec
+from .config import DEFAULT_DAYS
 from .toolkit import (
     args_of,
     client_for,
@@ -73,10 +74,16 @@ def handle_list_build_definitions(args: dict, **kwargs) -> dict[str, Any]:
 
 
 def handle_list_builds(args: dict, **kwargs) -> dict[str, Any]:
-    """The builds of a project, filtered by status and by definition."""
+    """The builds of a project, filtered by status, by definition and by the lookback window.
+
+    The date window is applied AFTER the fetch: the builds route silently ignores
+    minFinishTime/maxFinishTime query parameters (verified against the real API), so
+    the backend fetches the most recent builds and drops the ones outside the window.
+    """
     adoc = client_for(kwargs)
     arguments = args_of(args)
     project = project_arg(arguments)
+    days = int_arg(arguments, "days", default=DEFAULT_DAYS, minimum=0)
     params = page_params(
         int_arg(arguments, "top"),
         text_arg(arguments, "continuationToken"),
@@ -87,8 +94,20 @@ def handle_list_builds(args: dict, **kwargs) -> dict[str, Any]:
         params["definitions"] = _definition_id(adoc, project, definition)
     response = adoc.get(f"/{project}/_apis/build/builds", params=params)
     payload = decode_json(response)
+    builds = [_build(item) for item in list_items(payload)]
+    if days:
+        from .contracts import cutoff_from_days
+
+        cutoff = cutoff_from_days(days)
+        builds = [
+            item
+            for item in builds
+            if (
+                item.get("finishTime") or item.get("queueTime") or ""
+            ) >= cutoff
+        ]
     return {
-        "builds": [_build(item) for item in list_items(payload)],
+        "builds": builds,
         "continuationToken": extract_continuation_token(response),
     }
 

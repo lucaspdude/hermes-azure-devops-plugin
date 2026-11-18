@@ -121,3 +121,18 @@ def _remote_url(wiki: Mapping[str, Any]) -> str:
         if candidate:
             return str(candidate).strip()
     return ""
+
+
+def cutoff_from_days(days: int | None, *, default_days: int = 7) -> str | None:
+    """The ISO 8601 UTC instant of days days ago, or None when there is no window.
+
+    The lookback window of pull requests; builds filter client-side with the
+    same helper (the builds route ignores date parameters - verified).
+    """
+    if not days or days <= 0:
+        return None
+    from datetime import datetime, timedelta, timezone
+
+    instant = datetime.now(timezone.utc) - timedelta(days=days)
+    return instant.strftime("%Y-%m-%dT%H:%M:%SZ")
+

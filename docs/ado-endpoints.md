@@ -176,3 +176,11 @@ The authenticated answers (the 200 of the planning) are still **pending**: they
 need the PAT in the profile of the host, which the user will configure. The
 smoke of reading on the host is therefore blocked by the credential, not by the
 routes.
+
+## Builds: filtros de data não são suportados pela API
+
+Verificado em 2026-11-17: os parâmetros `minFinishTime`/`maxFinishTime` da rota
+`/{project}/_apis/build/builds` são **ignorados em silêncio** pela API — a resposta
+é idêntica com e sem eles. O único filtro de data de builds possível é **client-side**
+(buscar os mais recentes com `$top` e filtrar por `finishTime`/`queueTime`), que é o
+que o plugin faz.

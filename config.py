@@ -13,6 +13,9 @@ DEFAULT_BASE_URL = "https://dev.azure.com"
 DEFAULT_API_VERSION = "7.1"
 DEFAULT_PROJECT = ""
 DEFAULT_HTTP_TIMEOUT_MS = 30000
+DEFAULT_DAYS = 7
+MIN_DAYS = 1
+MAX_DAYS = 90
 
 
 @dataclass(frozen=True)
@@ -24,6 +27,18 @@ class PluginConfig:
     api_version: str = DEFAULT_API_VERSION
     default_project: str = DEFAULT_PROJECT
     http_timeout_ms: int = DEFAULT_HTTP_TIMEOUT_MS
+    ignored_projects: tuple[str, ...] = ()
+    default_days: int = DEFAULT_DAYS
+
+    @property
+    def ignored_project_names(self) -> frozenset[str]:
+        """Ignored project names, lowercase for case-insensitive matching."""
+        return frozenset(name.lower() for name in self.ignored_projects)
+
+    @property
+    def ignored_project_ids(self) -> frozenset[str]:
+        """Ignored project ids, exact match."""
+        return frozenset(self.ignored_projects)
 
     @property
     def missing_settings(self) -> list[str]:
@@ -58,7 +73,31 @@ def load_config(ctx) -> PluginConfig:
         http_timeout_ms=_as_int(
             ctx.get_config("http_timeout_ms", DEFAULT_HTTP_TIMEOUT_MS), DEFAULT_HTTP_TIMEOUT_MS
         ),
+        ignored_projects=_as_project_list(ctx.get_config("ignored_projects", [])),
+        default_days=_clamp_days(_as_int(ctx.get_config("default_days", DEFAULT_DAYS), DEFAULT_DAYS)),
     )
+
+
+def _as_project_list(value: Any) -> tuple[str, ...]:
+    """The ignored-projects setting: a list of names or ids, trimmed, deduped."""
+    if isinstance(value, str):
+        parts = [part.strip() for part in value.split(",")]
+    elif isinstance(value, (list, tuple)):
+        parts = [str(part).strip() for part in value]
+    else:
+        parts = []
+    seen: set[str] = set()
+    projects: list[str] = []
+    for part in parts:
+        if part and part.lower() not in seen:
+            seen.add(part.lower())
+            projects.append(part)
+    return tuple(projects)
+
+
+def _clamp_days(value: int) -> int:
+    """Keep the lookback window inside the supported 1..90 range."""
+    return max(MIN_DAYS, min(MAX_DAYS, value))
 
 
 def _as_text(value: Any, default: str) -> str:

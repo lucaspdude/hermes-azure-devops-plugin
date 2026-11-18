@@ -19,10 +19,11 @@ called ``repository`` (``repositoryId`` is accepted as an alias).
 from typing import Any
 
 from .client import decode_json
-from .contracts import page_params
+from .contracts import cutoff_from_days, page_params
 from .errors import CODE_INVALID_INPUT, AdoError
 from .pagination import extract_continuation_token
 from .registry import ToolSpec
+from .config import DEFAULT_DAYS
 from .toolkit import (
     args_of,
     client_for,
@@ -50,6 +51,11 @@ def handle_list_pull_requests(args: dict, **kwargs) -> dict[str, Any]:
         text_arg(arguments, "continuationToken"),
     )
     params["searchCriteria.status"] = status
+    min_time = cutoff_from_days(
+        int_arg(arguments, "days", default=DEFAULT_DAYS, minimum=0)
+    )
+    if min_time:
+        params["searchCriteria.minTime"] = min_time
     response = adoc.get(
         f"/{project}/_apis/git/repositories/{repository}/pullrequests",
         params=params,
