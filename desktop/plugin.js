@@ -55,7 +55,11 @@ const styles = {
     background: color + '22',
     color,
     flexShrink: 0,
+    minWidth: '86px',
+    textAlign: 'center',
+    boxSizing: 'border-box',
   }),
+  sectionTitle: { fontSize: '12px', color: 'var(--ui-text-secondary)', marginBottom: '6px' },
   row: {
     display: 'flex',
     justifyContent: 'space-between',
@@ -66,8 +70,8 @@ const styles = {
     borderBottom: '1px solid var(--ui-border)',
     cursor: 'pointer',
   },
-  rowPrimary: { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
-  rowSecondary: { color: 'var(--ui-text-secondary)', fontSize: '12px', flexShrink: 0 },
+  rowPrimary: { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: '1 1 auto', minWidth: 0 },
+  rowSecondary: { color: 'var(--ui-text-secondary)', fontSize: '12px', flexShrink: 0, minWidth: '64px', textAlign: 'right' },
   empty: { color: 'var(--ui-text-secondary)', fontSize: '13px', padding: '12px 0' },
   warning: {
     padding: '8px',
@@ -153,6 +157,7 @@ function Panel({ ctx }) {
   })
   const [ignoredOpen, setIgnoredOpen] = useState(false)
   const [data, setData] = useState(null)
+  const [releaseData, setReleaseData] = useState(null)
   const [status, setStatus] = useState({ state: 'loading', message: null })
   const [updatedAt, setUpdatedAt] = useState(null)
 
@@ -176,6 +181,16 @@ function Panel({ ctx }) {
   }, [days])
 
   useEffect(() => { load() }, [days, load])
+
+  // A rota /releases é separada: busca quando a aba fica ativa (ou o período muda).
+  useEffect(() => {
+    if (activeTab !== 'releases') return
+    let alive = true
+    ctx.rest('/releases?days=' + days)
+      .then((payload) => { if (alive) setReleaseData(payload) })
+      .catch(() => {})
+    return () => { alive = false }
+  }, [activeTab, days, ctx])
 
   useEffect(() => {
     const disposer = ctx.setInterval(load, POLL_MS)
@@ -236,7 +251,7 @@ function Panel({ ctx }) {
       color: stateColor(b.result || b.status),
       url: b.url,
     }))
-  const releaseRows = (data?.releases || [])
+  const releaseRows = (releaseData?.releases || [])
     .filter((r) => match(r.name) || match(r.project))
     .map((r) => ({
       key: 'r-' + r.id,
@@ -295,14 +310,17 @@ function Panel({ ctx }) {
             jsx('label', { key: p.id || p.name, style: styles.ignoredRow },
               jsx('input', {
                 type: 'checkbox',
-                checked: (ignored.includes(p.id) || ignored.includes(p.name)),
+                checked: (ignored.includes(p.id) || ignored.includes(p.name) || p.ignored),
                 onChange: () => {
-                  const next = ignored.includes(p.id) || ignored.includes(p.name)
+                  const next = (ignored.includes(p.id) || ignored.includes(p.name) || p.ignored)
                     ? ignored.filter((x) => x !== p.id && x !== p.name)
                     : [...ignored, p.id]
                   setIgnored(next)
                   try { localStorage.setItem('azure-devops.ignored', JSON.stringify(next)) } catch {}
-                  if (ctx.rest) ctx.rest('/settings/ignored-projects', { method: 'POST', body: { ignored_projects: next } })
+                  if (ctx.rest) {
+                    ctx.rest('/settings/ignored-projects', { method: 'POST', body: { ignored_projects: next } })
+                      .then(() => load())
+                  }
                 },
               }),
               p.name,
@@ -346,8 +364,8 @@ function Panel({ ctx }) {
             onClick: row.url ? () => ctx_host_open(row.url) : undefined,
             children: [
               jsx('span', { key: 'p', style: styles.rowPrimary, children: row.primary }),
-              jsx(Badge, { key: 'b', value: row.badge, colorOverride: row.color }),
               jsx('span', { key: 's', style: styles.rowSecondary, children: row.secondary }),
+              jsx(Badge, { key: 'b', value: row.badge, colorOverride: row.color }),
             ],
           }, row.key)
         ) }),
