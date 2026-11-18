@@ -125,13 +125,23 @@ class _FakeContext:
 
 
 
-def _overview_payload(client: Any) -> dict[str, Any]:
+def _overview_payload(client: Any, days: int = 7) -> dict[str, Any]:
     """Pull requests of the user, work items assigned to them, recent builds.
 
     The identity comes from ``connectionData``; a PAT without the Identity
     scope degrades: the parts that do not need the identity are still listed.
+    The ``days`` window filters PRs server-side (searchCriteria.minTime),
+    builds client-side (the builds route ignores date parameters - verified)
+    and work items through the WIQL clause.
     """
     from hermes_plugin_modules import authenticated_user_id
+    from datetime import datetime, timedelta, timezone
+
+    cutoff = ""
+    if days and days > 0:
+        cutoff = (
+            datetime.now(timezone.utc) - timedelta(days=days)
+        ).strftime("%Y-%m-%dT%H:%M:%SZ")
 
     identity_warning = None
     try:
@@ -143,6 +153,7 @@ def _overview_payload(client: Any) -> dict[str, Any]:
     pull_requests: list[dict[str, Any]] = []
     work_items: list[dict[str, Any]] = []
     builds: list[dict[str, Any]] = []
+    project_flags: list[dict[str, Any]] = []
 
     if user_id:
         # A API do Azure DevOps nao tem PR a nivel de organizacao: PR vive em
@@ -157,12 +168,20 @@ def _overview_payload(client: Any) -> dict[str, Any]:
         ]
         project_ids = [p.get("id") for p in projects]
         project_by_id = {p.get("id"): p for p in projects}
+        project_flags = [
+            {
+                "id": p.get("id"),
+                "name": p.get("name"),
+                "ignored": _project_ignored(p.get("id"), p.get("name"), client),
+            }
+            for p in projects_payload.get("value", [])
+        ]
         mine = []
         for pid in project_ids:
-            response = client.get(
-                f"/{pid}/_apis/git/pullrequests",
-                params={"searchCriteria.status": "active", "$top": 10},
-            )
+            params: dict[str, Any] = {"searchCriteria.status": "active", "$top": 10}
+            if cutoff:
+                params["searchCriteria.minTime"] = cutoff
+            response = client.get(f"/{pid}/_apis/git/pullrequests", params=params)
             for item in decode_json(response).get("value", []):
                 ids = {
                     str((item.get("createdBy") or {}).get("id") or ""),
@@ -188,7 +207,8 @@ def _overview_payload(client: Any) -> dict[str, Any]:
 
         wiql = (
             "SELECT [System.Id] FROM WorkItems WHERE [System.AssignedTo] = @me "
-            "ORDER BY [System.ChangedDate] DESC"
+            + (f"AND [System.ChangedDate] >= @Today-{days} " if cutoff else "")
+            + "ORDER BY [System.ChangedDate] DESC"
         )
         ids: list[Any] = []
         for pid in project_ids:
@@ -221,6 +241,12 @@ def _overview_payload(client: Any) -> dict[str, Any]:
                     item = dict(item)
                     item["_project"] = pid
                     build_rows.append(item)
+        if cutoff:
+            build_rows = [
+                item
+                for item in build_rows
+                if ((item.get("finishTime") or item.get("queueTime") or "")) >= cutoff
+            ]
         builds = [
             {
                 "id": item.get("id"),
@@ -239,16 +265,17 @@ def _overview_payload(client: Any) -> dict[str, Any]:
         "pullRequests": pull_requests,
         "workItems": work_items,
         "builds": builds,
+        "projects": project_flags,
     }
     if identity_warning:
         payload["identityWarning"] = identity_warning
     return payload
 
 
-def _build_overview() -> dict[str, Any]:
+def _build_overview(days: int = 7) -> dict[str, Any]:
     client = _panel_client()
     try:
-        return _overview_payload(client)
+        return _overview_payload(client, days)
     finally:
         close = getattr(client, "close", None)
         if close:
@@ -265,9 +292,16 @@ def _served(key: tuple, build: Callable[[], Any]) -> Any:
     return value
 
 
-def _releases_payload(client: Any) -> dict[str, Any]:
+def _releases_payload(client: Any, days: int = 7) -> dict[str, Any]:
     """Releases recentes dos projetos da organização (mesma varredura do overview)."""
     from hermes_plugin_modules import decode_json
+    from datetime import datetime, timedelta, timezone
+
+    cutoff = ""
+    if days and days > 0:
+        cutoff = (
+            datetime.now(timezone.utc) - timedelta(days=days)
+        ).strftime("%Y-%m-%dT%H:%M:%SZ")
 
     org = client.config.organization
     projects_payload = decode_json(client.get("/_apis/projects", params={"$top": 200}))
@@ -290,6 +324,8 @@ def _releases_payload(client: Any) -> dict[str, Any]:
                     "url": ((item.get("_links") or {}).get("web") or {}).get("href"),
                 }
             )
+    if cutoff:
+        releases = [item for item in releases if (item.get("created") or "") >= cutoff]
     releases.sort(key=lambda item: item.get("created") or "", reverse=True)
     return {"releases": releases[:20]}
 
@@ -309,15 +345,16 @@ def _project_ignored(project_id: Any, project_name: Any, client: Any) -> bool:
 def releases(request: Request) -> dict[str, Any]:
     """Releases recentes dos projetos da organização."""
     try:
+        days = _days_param(request)
         def build() -> dict[str, Any]:
             client = _panel_client()
             try:
-                return _releases_payload(client)
+                return _releases_payload(client, days)
             finally:
                 close = getattr(client, "close", None)
                 if close:
                     close()
-        return _served(("releases",), build)
+        return _served(("releases", days), build)
     except AdoError as exc:
         raise _panel_error(exc) from exc
 
@@ -340,16 +377,26 @@ async def set_ignored_projects(request: Request) -> dict[str, Any]:
         settings = entries.setdefault(PLUGIN_ID, {}).setdefault("settings", {})
         settings["ignored_projects"] = projects
         save_config(config)
+        cache_invalidate()
     except Exception as exc:
         return {"ok": False, "error": {"code": "upstream_error", "message": str(exc)[:200]}}
     return {"ok": True, "ignored_projects": projects}
 
 
+def _days_param(request: Request) -> int:
+    """The days query param, clamped to the supported 1-90 window (default 7)."""
+    try:
+        value = int(request.query_params.get("days", ""))
+    except ValueError:
+        return 7
+    return max(1, min(90, value))
+
 @router.get("/overview")
 def overview(request: Request) -> dict[str, Any]:
     """The activity of the authenticated user (the panel's only aggregate)."""
     try:
-        return _served(("overview",), _build_overview)
+        days = _days_param(request)
+        return _served(("overview", days), lambda: _build_overview(days))
     except AdoError as exc:
         raise _panel_error(exc) from exc
 

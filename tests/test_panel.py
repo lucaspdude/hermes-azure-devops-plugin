@@ -9,7 +9,12 @@ import time
 import unittest
 
 import httpx
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
+
+_NOW = datetime.now(timezone.utc)
+_RECENT = (_NOW - timedelta(hours=1)).strftime('%Y-%m-%dT%H:%M:%SZ')
+_OLD = (_NOW - timedelta(days=30)).strftime('%Y-%m-%dT%H:%M:%SZ')
 
 from support import fake_client, plugin_module
 
@@ -49,9 +54,12 @@ class OverviewPayloadTest(unittest.TestCase):
         import httpx
 
         backend = _load_backend()
+        captured = {"min_time": []}
 
         def handler(request):
             path = request.url.path
+            if path.endswith("/git/pullrequests"):
+                captured["min_time"].append(request.url.params.get("searchCriteria.minTime"))
             if path.endswith("/_apis/projects"):
                 return httpx.Response(
                     200,
@@ -77,8 +85,15 @@ class OverviewPayloadTest(unittest.TestCase):
                                 "isDraft": False,
                                 "createdBy": {"id": "user-1"},
                                 "repository": {"name": "r"},
+                                "creationDate": _RECENT,
                             },
-                            {"pullRequestId": 8, "title": "other", "createdBy": {"id": "u2"}, "reviewers": []},
+                            {
+                                "pullRequestId": 8,
+                                "title": "old but mine",
+                                "createdBy": {"id": "user-1"},
+                                "reviewers": [],
+                                "creationDate": _OLD,
+                            },
                         ]
                     },
                     request=request,
@@ -105,8 +120,9 @@ class OverviewPayloadTest(unittest.TestCase):
                     200,
                     json={
                         "value": [
-                            {"id": 1, "buildNumber": "b1", "status": "completed", "result": "succeeded", "definition": {"name": "ci"}, "requestedFor": {"id": "user-1"}},
+                            {"id": 1, "buildNumber": "b1", "status": "completed", "result": "succeeded", "definition": {"name": "ci"}, "requestedFor": {"id": "user-1"}, "finishTime": _RECENT},
                             {"id": 2, "buildNumber": "b2", "requestedFor": {"id": "u2"}},
+                            {"id": 3, "buildNumber": "b3", "definition": {"name": "ci"}, "requestedFor": {"id": "user-1"}, "finishTime": _OLD},
                         ]
                     },
                     request=request,
@@ -115,11 +131,23 @@ class OverviewPayloadTest(unittest.TestCase):
 
         from support import fake_client
 
-        payload = backend["_overview_payload"](fake_client(handler))
-        self.assertEqual([p["id"] for p in payload["pullRequests"]], [7])
+        # A janela vai como searchCriteria.minTime na query (o fake responde sempre
+        # a mesma lista, entao o conteudo nao prova o filtro de PRs; builds filtram
+        # no cliente e o conteudo prova).
+        payload = backend["_overview_payload"](fake_client(handler), 7)
+        self.assertEqual([p["id"] for p in payload["pullRequests"]], [7, 8])
         self.assertEqual([w["id"] for w in payload["workItems"]], [42, 43])
         self.assertEqual([b["id"] for b in payload["builds"]], [1])
+        self.assertTrue(captured["min_time"][-1])
+        self.assertEqual([p["id"] for p in payload["projects"]], ["proj-1"])
+        self.assertFalse(payload["projects"][0]["ignored"])
         self.assertNotIn("identityWarning", payload)
+
+        # Sem janela (days=0) nao vai minTime na query e o corte de builds sai.
+        unwindowed = backend["_overview_payload"](fake_client(handler), 0)
+        self.assertEqual([p["id"] for p in unwindowed["pullRequests"]], [7, 8])
+        self.assertEqual([b["id"] for b in unwindowed["builds"]], [1, 3])
+        self.assertFalse(captured["min_time"][-1])
 
         # A PAT sem o escopo de identidade degrada com aviso, sem quebrar as secoes.
         def no_identity_handler(request):
@@ -161,6 +189,19 @@ class ReadOnlyTest(unittest.TestCase):
         # Rotas de conteúdo (overview/detalhes/releases) e a rota de configuração
         # ignored-projects são as únicas; nenhum acesso ao Azure DevOps de escrita.
         self.assertFalse({"PUT", "PATCH", "DELETE"} & set(methods))
+
+
+@unittest.skipUnless(fastapi, "fastapi is not available")
+class DaysParamTest(unittest.TestCase):
+    def test_the_days_param_clamps_to_the_supported_window(self):
+        backend = _load_backend()
+        request = type("R", (), {})()
+        request.query_params = {"days": "500"}
+        self.assertEqual(backend["_days_param"](request), 90)
+        request.query_params = {"days": "abc"}
+        self.assertEqual(backend["_days_param"](request), 7)
+        request.query_params = {"days": "0"}
+        self.assertEqual(backend["_days_param"](request), 1)
 
 
 if __name__ == "__main__":
