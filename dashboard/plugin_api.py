@@ -180,6 +180,8 @@ def _overview_payload(client: Any) -> dict[str, Any]:
                 "project": pid,
                 "repository": (item.get("repository") or {}).get("name"),
                 "isDraft": item.get("isDraft"),
+                "createdAt": (item.get("creationDate") or ""),
+                "url": (((item.get("_links") or {}).get("web") or {}).get("href")),
             }
             for pid, item in mine
         ][:20]
@@ -205,6 +207,8 @@ def _overview_payload(client: Any) -> dict[str, Any]:
                     "type": (item.get("fields") or {}).get("System.WorkItemType"),
                     "title": (item.get("fields") or {}).get("System.Title"),
                     "state": (item.get("fields") or {}).get("System.State"),
+                    "changed": (item.get("fields") or {}).get("System.ChangedDate"),
+                    "url": (((item.get("_links") or {}).get("html") or {}).get("href")),
                 }
                 for item in decode_json(response).get("value", [])
             ]
@@ -225,6 +229,8 @@ def _overview_payload(client: Any) -> dict[str, Any]:
                 "result": item.get("result"),
                 "definition": (item.get("definition") or {}).get("name"),
                 "project": item.get("_project"),
+                "finishedAt": (item.get("finishTime") or item.get("queueTime") or ""),
+                "url": (((item.get("_links") or {}).get("web") or {}).get("href")),
             }
             for item in build_rows
         ][:10]
